@@ -25,23 +25,34 @@ $EXCLUDE_TAG = "other/*"
 
 # retrieve all logins from the specified vault
 $logins = op item list --categories login --format json --vault $Vault | ConvertFrom-Json
+Write-Output "Found $($logins.Count) logins in the vault $Vault"
 
 foreach ($login in $logins) {
     # get the login details, check for passwords and fields
     $loginDetails = op item get --format json $login.id | ConvertFrom-Json
-    $loginPassword = $loginDetails.fields | Where-Object { ($_.id -eq "password") -and ($null -ne $_.value) }
+    $loginPassword = $loginDetails.fields | Where-Object { 
+        ($_.id -eq "password") -and ($null -ne $_.value) 
+    }
     $loginFields = $loginDetails.fields | ForEach-Object { $_.label }
 
-    if ($loginDetails.tags -notlike $EXCLUDE_TAG) {
+    # check if the login has excluded tags
+    $excludeTags = $loginDetails.tags | Where-Object { $_ -like $EXCLUDE_TAG }
+    if ($excludeTags.Count -eq 0) {
         # add a last password update field to password-based logins without it
-        if (($null -ne $loginPassword) -and ($loginFields -notcontains "last password update")) {
-            $createdDate = $login.created_at.Substring(0, 10)
+        if (
+            ($null -ne $loginPassword) -and 
+            ($loginFields -notcontains "last password update")
+        ) {
+            $createdDate = ([datetime]$login.created_at).ToString("yyyy-MM-dd")
             op item edit $login.id "rotation.last password update[date]=$createdDate" | Out-Null
             Write-Output "Added last password update field to $($login.title)"
         }
         
         # add SSO tag to logins with SSO but without the tag
-        elseif (($loginFields -contains "sign in with") -and ($loginDetails.tags -notcontains $SSO_TAG)) {
+        elseif (
+            ($loginFields -contains "sign in with") -and 
+            ($loginDetails.tags -notcontains $SSO_TAG)
+        ) {
             $newTags = $loginDetails.tags + $SSO_TAG
             Write-Output "Add SSO tag to $($login.title)"
             # NOTE: CLI does not currently support ssoLogin fields, this will error
