@@ -27,8 +27,10 @@ $EXCLUDE_TAG = "other/*"
 $logins = op item list --categories login --format json --vault $Vault | ConvertFrom-Json
 Write-Output "Found $($logins.Count) logins in the vault $Vault"
 
-foreach ($login in $logins) {
+$totalLogins = $logins.Count
+for ($i = 0; $i -lt $totalLogins; $i++) {
     # get the login details, check for passwords and fields
+    $login = $logins[$i]
     $loginDetails = op item get --format json $login.id | ConvertFrom-Json
     $loginPassword = $loginDetails.fields | Where-Object { 
         ($_.id -eq "password") -and ($null -ne $_.value) 
@@ -60,4 +62,9 @@ foreach ($login in $logins) {
             # Write-Output "Added SSO tag to $($login.title)"
         }
     }
+
+    # show progress bar while updating items
+    Write-Progress -PercentComplete (($i / $totalLogins) * 100) `
+        -Status "Updating $($login.title)" `
+        -Activity "Adding rotation fields"
 }

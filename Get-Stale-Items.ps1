@@ -45,9 +45,10 @@ $logins = op item list --categories login --tags $Tag --format json --vault $Vau
 $stale = @()
 Write-Output "Reviewing $($logins.Count) login items with tag: $Tag"
 
-
-foreach ($login in $logins) {
+$totalLogins = $logins.Count
+for ($i = 0; $i -lt $totalLogins; $i++) {
     # get the login details, check for passwords and fields
+    $login = $logins[$i]
     $loginDetails = op item get --format json $login.id | ConvertFrom-Json
     $loginPassword = $loginDetails.fields | Where-Object { 
         ($_.id -eq "password") -and ($null -ne $_.value) 
@@ -77,6 +78,11 @@ foreach ($login in $logins) {
             }
         }
     }
+
+    # show progress bar while checking items
+    Write-Progress -PercentComplete (($i / $totalLogins) * 100) `
+        -Status "Checking $($login.title)" `
+        -Activity "Checking for stale items"
 }
 
 Write-Output "$($stale.Count) stale items with tag: $Tag"
