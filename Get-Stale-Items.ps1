@@ -67,14 +67,14 @@ for ($i = 0; $i -lt $totalLogins; $i++) {
             $_.label -eq "last password update" 
         } | Select-Object -ExpandProperty value
         $lastUpdateDate = ([System.DateTimeOffset]::FromUnixTimeSeconds($lastUpdate)).DateTime
-        $daysSinceLastUpdate = (New-TimeSpan -Start $lastUpdateDate -End (Get-Date)).Days
+        $daysSinceUpdate = (New-TimeSpan -Start $lastUpdateDate -End (Get-Date)).Days
 
-        if ($daysSinceLastUpdate -gt $days) {
+        if ($daysSinceUpdate -gt $days) {
             $stale += [PSCustomObject]@{
                 Title           = $login.title
                 ID              = $login.id
                 LastUpdate      = $lastUpdateDate.ToString("yyyy-MM-dd")
-                DaysSinceUpdate = $daysSinceLastUpdate
+                DaysSince = $daysSinceUpdate
             }
         }
     }
