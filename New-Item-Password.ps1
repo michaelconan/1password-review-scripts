@@ -8,6 +8,11 @@
     The script also updates the last password update date to the current date.
     If the item does not have a password recipe field, it uses a default recipe.
 
+    When the recipe includes "words", a memorable password is generated locally by mixing random
+    words with the other recipe components (digits, symbols), since the 1Password CLI does not
+    support word-based generation natively. Words are sourced from the EFF large wordlist and
+    cached locally; the cache is refreshed automatically when missing.
+
     .PARAMETER Vault
     The name of the vault to retrieve items from. Default is "private".
 
@@ -26,6 +31,8 @@ param(
     [string]$Item
 )
 
+. "$PSScriptRoot\Utils.ps1"
+
 $RECIPE = "letters,digits,symbols,32"
 
 # get specified password recipe or fallback to default
@@ -39,6 +46,15 @@ if ($null -ne $recipeField) {
 
 # generate a new password using the recipe and update the rotation date
 $today = Get-Date -Format "yyyy-MM-dd"
-op item edit --vault $Vault $Item --generate-password=$recipe | Out-Null
+$recipeParts = $recipe -split ','
+$recipeLength = [int]($recipeParts | Where-Object { $_ -match '^\d+$' } | Select-Object -First 1)
+if ($recipeLength -eq 0) { $recipeLength = 32 }
+
+if ('words' -in $recipeParts) {
+    $newPassword = New-MemorablePassword -RecipeParts $recipeParts -Length $recipeLength
+    op item edit --vault $Vault $Item "password=$newPassword" | Out-Null
+} else {
+    op item edit --vault $Vault $Item --generate-password=$recipe | Out-Null
+}
 op item edit --vault $Vault $Item "rotation.last password update[date]=$today" | Out-Null
 Write-Output "Generated password for $($itemDetails.title) with recipe $recipe"
