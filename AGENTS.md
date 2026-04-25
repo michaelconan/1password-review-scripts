@@ -13,16 +13,34 @@ PowerShell scripts for administrative management of a 1Password vault. They run 
 ## Repository layout
 
 ```
-Utils.ps1                  # Shared functions — dot-sourced by every script
-Get-Untagged-Items.ps1     # Audit: items with no meaningful tags
-Add-Rotation-Fields.ps1    # Setup: add rotation metadata to logins
-Get-Stale-Items.ps1        # Audit: logins overdue for a password change
-New-Item-Password.ps1      # Action: generate a new password for one item
+Utils.ps1                      # Shared functions — dot-sourced by every script
+Get-Untagged-Items.ps1         # Audit: items with no meaningful tags
+Add-Rotation-Fields.ps1        # Setup: add rotation metadata to logins
+Get-Stale-Items.ps1            # Audit: logins overdue for a password change
+New-Item-Password.ps1          # Action: generate a new password for one item
+Get-All-Items-Extended.ps1     # Export: full vault export with security metadata
 tests/
-  Utils.Tests.ps1          # Pester 3.4.0 unit tests for Utils.ps1
+  Utils.Tests.ps1              # Pester 3.4.0 unit tests for Utils.ps1
 ```
 
 ## Scripts
+
+### `Get-All-Items-Extended.ps1`
+Exports a full vault inventory to CSV, enriched with computed security metadata. For each item it records whether SSO or MFA applies, the last password update date (falling back to `created_at` when the rotation field is absent), and the password recipe. Items tagged `other/*` are excluded.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-Vault` | `private` | Vault to export |
+| `-ExportPath` | `items.csv` | Output CSV path (relative to current directory or absolute) |
+
+Output columns: `Title`, `Username`, `Category`, `Id`, `Vault`, `Security` (comma-separated flags: `SSO`, `MFA`), `Recipe`, `LastPwUpdate`, `DaysSince`.
+
+The output file is gitignored (`*.csv`).
+
+```powershell
+.\Get-All-Items-Extended.ps1
+.\Get-All-Items-Extended.ps1 -Vault Shared -ExportPath "C:\reports\vault.csv"
+```
 
 ### `Get-Untagged-Items.ps1`
 Lists login, password, and API credential items that have no tags (or only `secure*` tags, which are treated as non-significant). Intended as an audit pass before running the other scripts.
@@ -133,6 +151,9 @@ The `last password update` field in 1Password stores its value as a Unix timesta
 | `Get-StaleItemInfo` | `-Login -Details -Days -ExcludePattern` | Returns a `PSCustomObject {Title, ID, LastUpdate, DaysSinceUpdate}` if the item is stale, or `$null` if it should be skipped |
 | `Test-NeedsRotationField` | `-Details` | Returns `$true` if the item has a non-null password but no `last password update` field |
 | `Get-PasswordRecipe` | `-Details -Default` | Returns the value of the `password recipe` field, or `Default` if the field is absent |
+| `Test-ItemSso` | `-Details -SsoTag` | Returns `$true` if the item has a `sign in with` field or the given SSO tag |
+| `Test-ItemMfa` | `-Details -MfaTag` | Returns `$true` if the item carries the given MFA tag |
+| `Get-ItemExtendedInfo` | `-Details -ExcludePattern -SsoTag -MfaTag` | Returns a `PSCustomObject {Title, Username, Category, Id, Vault, Security, Recipe, LastPwUpdate, DaysSince}` for one item, or `$null` for excluded items. Falls back to `created_at` when no rotation field exists |
 
 ### Password generation
 

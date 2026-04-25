@@ -7,9 +7,17 @@ function New-FakeDetails {
         [long]$RotationTimestamp = 0,
         [string]$RecipeValue = '',
         [string[]]$Tags = @(),
-        [switch]$WithSignInWith
+        [switch]$WithSignInWith,
+        [string]$Title = 'Test Item',
+        [string]$Category = 'LOGIN',
+        [string]$VaultName = 'private',
+        [string]$CreatedAt = '2020-01-01T00:00:00Z',
+        [string]$Username = ''
     )
     $fields = @()
+    if ($Username) {
+        $fields += [PSCustomObject]@{ id = "username"; label = "username"; value = $Username }
+    }
     if ($WithPassword) {
         $fields += [PSCustomObject]@{ id = "password"; label = "password"; value = "secret" }
     }
@@ -22,7 +30,15 @@ function New-FakeDetails {
     if ($WithSignInWith) {
         $fields += [PSCustomObject]@{ id = "sso"; label = "sign in with"; value = "Google" }
     }
-    return [PSCustomObject]@{ fields = $fields; tags = $Tags }
+    return [PSCustomObject]@{
+        id         = "item1"
+        title      = $Title
+        category   = $Category
+        created_at = $CreatedAt
+        vault      = [PSCustomObject]@{ name = $VaultName }
+        fields     = $fields
+        tags       = $Tags
+    }
 }
 
 function New-FakeLogin {
@@ -212,6 +228,104 @@ Describe "Get-StaleItemInfo" {
         $result.Title       | Should Be "My Login"
         $result.LastUpdate  | Should Be "1970-01-01"
         $result.DaysSinceUpdate | Should BeGreaterThan 90
+    }
+}
+
+# ── Test-ItemSso ─────────────────────────────────────────────────────────────
+
+Describe "Test-ItemSso" {
+    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
+
+    It "returns true when item has a 'sign in with' field" {
+        $details = New-FakeDetails -WithSignInWith
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $true
+    }
+
+    It "returns true when item has the SSO tag" {
+        $details = New-FakeDetails -Tags @("secure/sso")
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $true
+    }
+
+    It "returns false when item has neither a sign-in field nor the SSO tag" {
+        $details = New-FakeDetails
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $false
+    }
+}
+
+# ── Test-ItemMfa ──────────────────────────────────────────────────────────────
+
+Describe "Test-ItemMfa" {
+    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
+
+    It "returns true when item has the MFA tag" {
+        $details = New-FakeDetails -Tags @("secure/mfa")
+        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should Be $true
+    }
+
+    It "returns false when item does not have the MFA tag" {
+        $details = New-FakeDetails -Tags @("finance")
+        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should Be $false
+    }
+}
+
+# ── Get-ItemExtendedInfo ──────────────────────────────────────────────────────
+
+Describe "Get-ItemExtendedInfo" {
+    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
+
+    It "returns null for an excluded item" {
+        $details = New-FakeDetails -Tags @("other/personal")
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result | Should Be $null
+    }
+
+    It "includes SSO in Security when item has a sign-in field" {
+        $details = New-FakeDetails -WithSignInWith
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.Security | Should Be "SSO"
+    }
+
+    It "includes MFA in Security when item has the MFA tag" {
+        $details = New-FakeDetails -Tags @("secure/mfa")
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.Security | Should Be "MFA"
+    }
+
+    It "includes both SSO and MFA when both apply" {
+        $details = New-FakeDetails -WithSignInWith -Tags @("secure/mfa")
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.Security | Should Be "SSO,MFA"
+    }
+
+    It "falls back to created_at date when no rotation field is present" {
+        $details = New-FakeDetails -WithPassword -CreatedAt "2022-06-15T00:00:00Z"
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.LastPwUpdate | Should Be "2022-06-15"
+    }
+
+    It "uses the rotation field date when present" {
+        # 1609459200 = 2021-01-01
+        $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp 1609459200
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.LastPwUpdate | Should Be "2021-01-01"
+    }
+
+    It "returns null recipe and dates for an item without a password" {
+        $details = New-FakeDetails
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result         | Should Not Be $null
+        $result.Recipe  | Should Be $null
+        $result.LastPwUpdate | Should Be $null
+        $result.DaysSince    | Should Be $null
+    }
+
+    It "populates item metadata from Details" {
+        $details = New-FakeDetails -Title "My Login" -Category "LOGIN" -VaultName "shared" -Username "user@example.com"
+        $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
+        $result.Title    | Should Be "My Login"
+        $result.Category | Should Be "LOGIN"
+        $result.Vault    | Should Be "shared"
+        $result.Username | Should Be "user@example.com"
     }
 }
 

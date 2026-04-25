@@ -3,11 +3,12 @@
 function Get-VaultItems {
     param(
         [string]$Vault,
-        [string[]]$Categories,
+        [string[]]$Categories = @(),
         [string]$Tag = '',
         [switch]$Long
     )
-    $opArgs = @("--categories", ($Categories -join ","), "--format", "json", "--vault", $Vault)
+    $opArgs = @("--format", "json", "--vault", $Vault)
+    if ($Categories.Count -gt 0) { $opArgs += "--categories", ($Categories -join ",") }
     if ($Tag)  { $opArgs += "--tags",  $Tag }
     if ($Long) { $opArgs += "--long" }
     op item list @opArgs | ConvertFrom-Json
@@ -84,9 +85,13 @@ function Get-ItemDetails {
     Write-Progress -Activity "Fetching item details" -Completed
 
     $results = $jobs | ForEach-Object {
-        [PSCustomObject]@{
-            Login   = $_.Login
-            Details = $_.PS.EndInvoke($_.Token)[0]
+        if ($_.PS.Streams.Error.Count -gt 0) {
+            Write-Warning "Failed to fetch '$($_.Login.title)': $($_.PS.Streams.Error[0])"
+        } else {
+            [PSCustomObject]@{
+                Login   = $_.Login
+                Details = $_.PS.EndInvoke($_.Token)[0]
+            }
         }
         $_.PS.Dispose()
     }
@@ -137,6 +142,58 @@ function Get-PasswordRecipe {
         return $recipeField.value
     }
     return $Default
+}
+
+function Test-ItemSso {
+    param($Details, [string]$SsoTag)
+    return ($null -ne (Get-ItemField -Details $Details -Label "sign in with")) -or
+           ($Details.tags -contains $SsoTag)
+}
+
+function Test-ItemMfa {
+    param($Details, [string]$MfaTag)
+    return $Details.tags -contains $MfaTag
+}
+
+function Get-ItemExtendedInfo {
+    param($Details, [string]$ExcludePattern, [string]$SsoTag, [string]$MfaTag)
+
+    if (Test-ItemExcluded -Details $Details -Pattern $ExcludePattern) { return $null }
+
+    $security = @()
+    if (Test-ItemSso -Details $Details -SsoTag $SsoTag) { $security += "SSO" }
+    if (Test-ItemMfa -Details $Details -MfaTag $MfaTag) { $security += "MFA" }
+
+    $usernameField = Get-ItemField -Details $Details -Id "username"
+    $passwordField = Get-ItemField -Details $Details -Id "password"
+
+    $recipe          = $null
+    $lastUpdateString = $null
+    $daysSinceUpdate  = $null
+
+    if ($null -ne $passwordField -and $null -ne $passwordField.value) {
+        $lastUpdateField = Get-ItemField -Details $Details -Label "last password update"
+        $lastUpdateDate  = if ($null -ne $lastUpdateField) {
+            ConvertFrom-UnixDate -Timestamp ([long]$lastUpdateField.value)
+        } else {
+            [datetime]$Details.created_at
+        }
+        $daysSinceUpdate  = (New-TimeSpan -Start $lastUpdateDate -End (Get-Date)).Days
+        $lastUpdateString = $lastUpdateDate.ToString("yyyy-MM-dd")
+        $recipe           = Get-PasswordRecipe -Details $Details -Default "letters,digits,symbols,32"
+    }
+
+    return [PSCustomObject]@{
+        Title        = $Details.title
+        Username     = $usernameField.value
+        Category     = $Details.category
+        Id           = $Details.id
+        Vault        = $Details.vault.name
+        Security     = ($security -join ",")
+        Recipe       = $recipe
+        LastPwUpdate = $lastUpdateString
+        DaysSince    = $daysSinceUpdate
+    }
 }
 
 # ── Password generation ───────────────────────────────────────────────────────
