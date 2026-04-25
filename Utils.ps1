@@ -52,6 +52,50 @@ function ConvertFrom-UnixDate {
     return ([System.DateTimeOffset]::FromUnixTimeSeconds($Timestamp)).DateTime
 }
 
+# ── Parallel item detail fetching ────────────────────────────────────────────
+
+function Get-ItemDetails {
+    param($Items, [int]$ThrottleLimit = 10)
+
+    if (-not $Items -or $Items.Count -eq 0) { return @() }
+
+    $pool = [RunspaceFactory]::CreateRunspacePool(1, $ThrottleLimit)
+    $pool.Open()
+
+    $jobs = $Items | ForEach-Object {
+        $itemId = $_.id
+        $ps = [PowerShell]::Create()
+        $ps.RunspacePool = $pool
+        [void]$ps.AddScript({
+            param($id)
+            op item get --format json $id | ConvertFrom-Json
+        }).AddArgument($itemId)
+        [PSCustomObject]@{ PS = $ps; Token = $ps.BeginInvoke(); Login = $_ }
+    }
+
+    $total = $jobs.Count
+    while (($jobs | Where-Object { -not $_.Token.IsCompleted }).Count -gt 0) {
+        $done = ($jobs | Where-Object { $_.Token.IsCompleted }).Count
+        Write-Progress -Activity "Fetching item details" `
+            -Status "$done / $total complete" `
+            -PercentComplete (($done / $total) * 100)
+        Start-Sleep -Milliseconds 200
+    }
+    Write-Progress -Activity "Fetching item details" -Completed
+
+    $results = $jobs | ForEach-Object {
+        [PSCustomObject]@{
+            Login   = $_.Login
+            Details = $_.PS.EndInvoke($_.Token)[0]
+        }
+        $_.PS.Dispose()
+    }
+
+    $pool.Close()
+    $pool.Dispose()
+    return $results
+}
+
 # ── Business logic ────────────────────────────────────────────────────────────
 
 function Get-StaleItemInfo {

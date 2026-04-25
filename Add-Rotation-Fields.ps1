@@ -28,10 +28,9 @@ $EXCLUDE_TAG = "other/*"
 $logins = Get-VaultItems -Vault $Vault -Categories @("login")
 Write-Output "Found $($logins.Count) logins in the vault $Vault"
 
-$totalLogins = $logins.Count
-for ($i = 0; $i -lt $totalLogins; $i++) {
-    $login = $logins[$i]
-    $details = Get-ItemDetail -Id $login.id
+foreach ($pair in (Get-ItemDetails -Items $logins)) {
+    $login   = $pair.Login
+    $details = $pair.Details
 
     if (-not (Test-ItemExcluded -Details $details -Pattern $EXCLUDE_TAG)) {
         if (Test-NeedsRotationField -Details $details) {
@@ -50,8 +49,4 @@ for ($i = 0; $i -lt $totalLogins; $i++) {
             # Write-Output "Added SSO tag to $($login.title)"
         }
     }
-
-    Write-Progress -PercentComplete (($i / $totalLogins) * 100) `
-        -Status "Updating $($login.title)" `
-        -Activity "Adding rotation fields"
 }

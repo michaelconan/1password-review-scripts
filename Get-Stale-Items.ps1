@@ -40,17 +40,9 @@ $logins = Get-VaultItems -Vault $Vault -Categories @("login") -Tag $Tag
 $stale = @()
 Write-Output "Reviewing $($logins.Count) login items with tag: $Tag"
 
-$totalLogins = $logins.Count
-for ($i = 0; $i -lt $totalLogins; $i++) {
-    $login = $logins[$i]
-    $details = Get-ItemDetail -Id $login.id
-    $info = Get-StaleItemInfo -Login $login -Details $details -Days $days -ExcludePattern $EXCLUDE_TAG
-    if ($null -ne $info) { $stale += $info }
-
-    Write-Progress -PercentComplete (($i / $totalLogins) * 100) `
-        -Status "Checking $($login.title)" `
-        -Activity "Checking for stale items"
-}
+$stale = Get-ItemDetails -Items $logins | ForEach-Object {
+    Get-StaleItemInfo -Login $_.Login -Details $_.Details -Days $days -ExcludePattern $EXCLUDE_TAG
+} | Where-Object { $null -ne $_ }
 
 Write-Output "$($stale.Count) stale items with tag: $Tag"
 $stale | Sort-Object -Property DaysSinceUpdate -Descending | Format-Table -AutoSize
