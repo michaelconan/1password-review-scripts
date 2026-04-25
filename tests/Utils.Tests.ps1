@@ -295,15 +295,15 @@ Describe "New-MemorablePassword" {
 
     It "contains only alpha characters with a words-only recipe" {
         $result = New-MemorablePassword -RecipeParts @("words") -Length 20
-        $result | Should Match '^[a-z]+$'
+        $result | Should Match '^[a-zA-Z]+$'
     }
 
     It "contains no truncated words with a digits recipe" {
-        # With 4-char words: segments between digits must all be complete words
+        # With 4-char words: segments between digits must all be complete words (case-insensitive)
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
         $wordSegments = $result -split '\d' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment | Should Be $true
+            $knownWords -contains $segment.ToLower() | Should Be $true
         }
     }
 
@@ -311,7 +311,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "symbols") -Length 20
         $wordSegments = $result -split '[!@#$%^&*\-_]' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment | Should Be $true
+            $knownWords -contains $segment.ToLower() | Should Be $true
         }
     }
 

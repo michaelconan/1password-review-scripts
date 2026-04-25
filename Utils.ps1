@@ -192,7 +192,9 @@ function New-MemorablePassword {
             break
         }
 
-        [void]$password.Append(($candidates | Get-Random))
+        $word = $candidates | Get-Random
+        if ((Get-Random -Minimum 0 -Maximum 2) -eq 1) { $word = $word.ToUpper() }
+        [void]$password.Append($word)
 
         if ($hasSeparator -and $password.Length -lt $Length) {
             [void]$password.Append(($separators | Get-Random))
