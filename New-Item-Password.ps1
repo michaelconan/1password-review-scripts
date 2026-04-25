@@ -35,16 +35,9 @@ param(
 
 $RECIPE = "letters,digits,symbols,32"
 
-# get specified password recipe or fallback to default
-$itemDetails = op item get --format json $Item --vault $Vault | ConvertFrom-Json
-$recipeField = $itemDetails.fields | Where-Object { $_.label -eq "password recipe" }
-if ($null -ne $recipeField) {
-    $recipe = $recipeField.value
-} else {
-    $recipe = $RECIPE
-}
+$itemDetails = Get-ItemDetail -Id $Item -Vault $Vault
+$recipe = Get-PasswordRecipe -Details $itemDetails -Default $RECIPE
 
-# generate a new password using the recipe and update the rotation date
 $today = Get-Date -Format "yyyy-MM-dd"
 $recipeParts = $recipe -split ','
 $recipeLength = [int]($recipeParts | Where-Object { $_ -match '^\d+$' } | Select-Object -First 1)
