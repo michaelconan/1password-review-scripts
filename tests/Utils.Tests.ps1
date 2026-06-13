@@ -1,53 +1,51 @@
-# ── Shared test fixtures ──────────────────────────────────────────────────────
-
-function New-FakeDetails {
-    param(
-        [switch]$WithPassword,
-        [switch]$WithRotationField,
-        [long]$RotationTimestamp = 0,
-        [string]$RecipeValue = '',
-        [string[]]$Tags = @(),
-        [switch]$WithSignInWith,
-        [string]$Title = 'Test Item',
-        [string]$Category = 'LOGIN',
-        [string]$VaultName = 'private',
-        [string]$CreatedAt = '2020-01-01T00:00:00Z',
-        [string]$Username = ''
-    )
-    $fields = @()
-    if ($Username) {
-        $fields += [PSCustomObject]@{ id = "username"; label = "username"; value = $Username }
-    }
-    if ($WithPassword) {
-        $fields += [PSCustomObject]@{ id = "password"; label = "password"; value = "secret" }
-    }
-    if ($WithRotationField) {
-        $fields += [PSCustomObject]@{ id = "rot"; label = "last password update"; value = $RotationTimestamp }
-    }
-    if ($RecipeValue) {
-        $fields += [PSCustomObject]@{ id = "rec"; label = "password recipe"; value = $RecipeValue }
-    }
-    if ($WithSignInWith) {
-        $fields += [PSCustomObject]@{ id = "sso"; label = "sign in with"; value = "Google" }
-    }
-    return [PSCustomObject]@{
-        id         = "item1"
-        title      = $Title
-        category   = $Category
-        created_at = $CreatedAt
-        vault      = [PSCustomObject]@{ name = $VaultName }
-        fields     = $fields
-        tags       = $Tags
-    }
-}
-
-function New-FakeLogin {
-    param([string]$Id = "item1", [string]$Title = "Test Item")
-    return [PSCustomObject]@{ id = $Id; title = $Title }
-}
-
 BeforeAll {
     . "$PSScriptRoot\..\Utils.ps1"
+
+    function New-FakeDetails {
+        param(
+            [switch]$WithPassword,
+            [switch]$WithRotationField,
+            [long]$RotationTimestamp = 0,
+            [string]$RecipeValue = '',
+            [string[]]$Tags = @(),
+            [switch]$WithSignInWith,
+            [string]$Title = 'Test Item',
+            [string]$Category = 'LOGIN',
+            [string]$VaultName = 'private',
+            [string]$CreatedAt = '2020-01-01T00:00:00Z',
+            [string]$Username = ''
+        )
+        $fields = @()
+        if ($Username) {
+            $fields += [PSCustomObject]@{ id = "username"; label = "username"; value = $Username }
+        }
+        if ($WithPassword) {
+            $fields += [PSCustomObject]@{ id = "password"; label = "password"; value = "secret" }
+        }
+        if ($WithRotationField) {
+            $fields += [PSCustomObject]@{ id = "rot"; label = "last password update"; value = $RotationTimestamp }
+        }
+        if ($RecipeValue) {
+            $fields += [PSCustomObject]@{ id = "rec"; label = "password recipe"; value = $RecipeValue }
+        }
+        if ($WithSignInWith) {
+            $fields += [PSCustomObject]@{ id = "sso"; label = "sign in with"; value = "Google" }
+        }
+        return [PSCustomObject]@{
+            id         = "item1"
+            title      = $Title
+            category   = $Category
+            created_at = $CreatedAt
+            vault      = [PSCustomObject]@{ name = $VaultName }
+            fields     = $fields
+            tags       = $Tags
+        }
+    }
+
+    function New-FakeLogin {
+        param([string]$Id = "item1", [string]$Title = "Test Item")
+        return [PSCustomObject]@{ id = $Id; title = $Title }
+    }
 }
 
 # ── Get-ItemField ─────────────────────────────────────────────────────────────
