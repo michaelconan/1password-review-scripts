@@ -14,11 +14,39 @@ function Get-VaultItems {
     op item list @opArgs | ConvertFrom-Json
 }
 
+function Test-OpTransientError {
+    param([string]$Message)
+    return $Message -match 'timed out|connecting to desktop app|temporarily unavailable'
+}
+
 function Get-ItemDetail {
-    param([string]$Id, [string]$Vault = '')
+    param(
+        [string]$Id,
+        [string]$Vault = '',
+        [int]$MaxRetries = 3,
+        [int]$RetryDelayMs = 1000
+    )
     $opArgs = @("--format", "json", $Id)
     if ($Vault) { $opArgs += "--vault", $Vault }
-    op item get @opArgs | ConvertFrom-Json
+
+    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
+        $output = op item get @opArgs 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            return ($output | ConvertFrom-Json)
+        }
+
+        $errMsg = ($output | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { "$_" }
+        }) -join "`n"
+
+        if ($attempt -lt $MaxRetries -and (Test-OpTransientError $errMsg)) {
+            Write-Verbose "Transient op error for item $Id (attempt $attempt/$MaxRetries); retrying..."
+            Start-Sleep -Milliseconds ($RetryDelayMs * $attempt)
+            continue
+        }
+
+        throw $errMsg
+    }
 }
 
 # ── Item field helpers ────────────────────────────────────────────────────────
@@ -56,7 +84,12 @@ function ConvertFrom-UnixDate {
 # ── Parallel item detail fetching ────────────────────────────────────────────
 
 function Get-ItemDetails {
-    param($Items, [int]$ThrottleLimit = 10)
+    param(
+        $Items,
+        [int]$ThrottleLimit = 10,
+        [int]$MaxRetries = 3,
+        [int]$RetryDelayMs = 1000
+    )
 
     if (-not $Items -or $Items.Count -eq 0) { return @() }
 
@@ -84,11 +117,19 @@ function Get-ItemDetails {
     }
     Write-Progress -Activity "Fetching item details" -Completed
 
-    $results = $jobs | ForEach-Object {
+    $results = @()
+    $failed = @()
+
+    $jobs | ForEach-Object {
         if ($_.PS.Streams.Error.Count -gt 0) {
-            Write-Warning "Failed to fetch '$($_.Login.title)': $($_.PS.Streams.Error[0])"
+            $errMsg = ($_.PS.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+            if (Test-OpTransientError $errMsg) {
+                $failed += $_.Login
+            } else {
+                Write-Warning "Failed to fetch '$($_.Login.title)': $errMsg"
+            }
         } else {
-            [PSCustomObject]@{
+            $results += [PSCustomObject]@{
                 Login   = $_.Login
                 Details = $_.PS.EndInvoke($_.Token)[0]
             }
@@ -98,6 +139,19 @@ function Get-ItemDetails {
 
     $pool.Close()
     $pool.Dispose()
+
+    if ($failed.Count -gt 0) {
+        Write-Verbose "Retrying $($failed.Count) failed fetches sequentially..."
+        foreach ($login in $failed) {
+            try {
+                $details = Get-ItemDetail -Id $login.id -MaxRetries $MaxRetries -RetryDelayMs $RetryDelayMs
+                $results += [PSCustomObject]@{ Login = $login; Details = $details }
+            } catch {
+                Write-Warning "Failed to fetch '$($login.title)' after retries: $_"
+            }
+        }
+    }
+
     return $results
 }
 

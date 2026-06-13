@@ -33,7 +33,7 @@ param(
 
 . "$PSScriptRoot\Utils.ps1"
 
-$RECIPE = "letters,digits,symbols,32"
+$RECIPE = "words,digits,symbols,32"
 
 $itemDetails = Get-ItemDetail -Id $Item -Vault $Vault
 $recipe = Get-PasswordRecipe -Details $itemDetails -Default $RECIPE
