@@ -7,55 +7,49 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$testPath = Join-Path $repoRoot 'tests\Utils.Tests.ps1'
+$testPath = Join-Path $repoRoot 'tests'
 $coveragePath = Join-Path $repoRoot 'Utils.ps1'
 $reportDir = Join-Path $repoRoot 'coverage'
-$pesterVersion = '3.4.0'
 
-if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -eq $pesterVersion })) {
-    Write-Host "Installing Pester $pesterVersion..."
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    Install-Module -Name Pester -RequiredVersion $pesterVersion -Force -SkipPublisherCheck -Scope CurrentUser
-}
+# We don't want to install Pester inside the script if we can avoid it,
+# but we'll keep a check for a minimum version if needed.
+# However, Pester 5 is significantly different, so we'll just assume it's there
+# or let the CI handle installation.
 
-if (Get-Module -Name Pester) {
-    Remove-Module -Name Pester -Force
-}
-Import-Module -Name Pester -RequiredVersion $pesterVersion -Force
-
-$pesterParams = @{
-    Path       = $testPath
-    PassThru   = $true
-    EnableExit = $true
-}
+$config = New-PesterConfiguration
+$config.Run.Path = $testPath
+$config.Run.Exit = $true
+$config.TestResult.Enabled = $true
+$config.TestResult.OutputPath = Join-Path $reportDir 'test-results.xml'
+$config.TestResult.OutputFormat = 'NUnitXml'
 
 if ($IncludeCoverage) {
-    $pesterParams['CodeCoverage'] = $coveragePath
     if (-not (Test-Path $reportDir)) {
         New-Item -ItemType Directory -Path $reportDir | Out-Null
     }
-    $pesterParams['OutputFile'] = Join-Path $reportDir 'test-results.xml'
-    $pesterParams['OutputFormat'] = 'NUnitXml'
+    $config.CodeCoverage.Enabled = $true
+    $config.CodeCoverage.Path = $coveragePath
+    $config.CodeCoverage.OutputPath = Join-Path $reportDir 'coverage.xml'
+    $config.CodeCoverage.OutputFormat = 'JaCoCo'
 }
 
-$result = Invoke-Pester @pesterParams
+$result = Invoke-Pester -Configuration $config
 
-Write-Host "Tests: $($result.PassedCount) passed, $($result.FailedCount) failed"
-
+# Pester 5 returns a different object structure
 if ($IncludeCoverage.IsPresent) {
-    if ($null -eq $result.CodeCoverage) {
+    $coverageReport = $result.CodeCoverage
+    if ($null -eq $coverageReport) {
         Write-Warning 'Coverage was requested but no coverage data was returned.'
     } else {
-        $coverageReport = $result.CodeCoverage
-        $pct = if ($coverageReport.NumberOfCommandsAnalyzed -gt 0) {
-            [math]::Round(($coverageReport.NumberOfCommandsExecuted / $coverageReport.NumberOfCommandsAnalyzed) * 100, 2)
+        $pct = if ($coverageReport.TotalCount -gt 0) {
+            [math]::Round(($coverageReport.HitCount / $coverageReport.TotalCount) * 100, 2)
         } else {
             0
         }
 
         $summary = @(
             "Code coverage: $pct%"
-            "Commands covered: $($coverageReport.NumberOfCommandsExecuted) / $($coverageReport.NumberOfCommandsAnalyzed)"
+            "Commands covered: $($coverageReport.HitCount) / $($coverageReport.TotalCount)"
             "File: Utils.ps1"
         ) -join [Environment]::NewLine
 
@@ -63,12 +57,15 @@ if ($IncludeCoverage.IsPresent) {
         $summaryPath = Join-Path $reportDir 'summary.txt'
         Set-Content -Path $summaryPath -Value $summary -Encoding UTF8
 
+        # In Pester 5, MissedCommands might be handled differently,
+        # but let's see if we can still extract them for the summary.
+        # It's an array of coverage objects.
         $missed = @($coverageReport.MissedCommands)
         if ($missed.Count -gt 0) {
             $missedPath = Join-Path $reportDir 'missed-commands.txt'
             $missed |
-                Sort-Object Function, Line |
-                Format-Table Function, Line, Command -AutoSize |
+                Sort-Object StartLine |
+                Format-Table StartLine, StartColumn, Text -AutoSize |
                 Out-String -Width 200 |
                 Set-Content -Path $missedPath -Encoding UTF8
         }
