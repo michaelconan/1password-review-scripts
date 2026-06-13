@@ -86,6 +86,7 @@ for ($i = 0; $i -lt $totalItems; $i++) {
             Title = $details.title
             Username = $usernameField.value
             Category = $details.category
+            Tags = ($details.tags -join ",")
             Id = $details.id
             Vault = $details.vault.name
             Security = ($security -join ",")

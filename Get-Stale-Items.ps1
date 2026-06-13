@@ -26,6 +26,7 @@ param(
     [string]$Tag
 )
 
+$ITEM_CATEGORIES = @("login", "api credential", "password")
 $CADENCES = @{
     "finance" = 90
     "main"    = 90
@@ -40,10 +41,11 @@ else {
     $days = 360
 }
 
-# get items from the vault with the specified tag
-$logins = op item list --categories login --tags $Tag --format json --vault $Vault | ConvertFrom-Json
+# get items from the vault with the specified 
+$categoryString = $ITEM_CATEGORIES -Join ","
+$logins = op item list --categories $categoryString --tags $Tag --format json --vault $Vault | ConvertFrom-Json
 $stale = @()
-Write-Output "Reviewing $($logins.Count) login items with tag: $Tag"
+Write-Output "Reviewing $($logins.Count) items matching $categoryString with tag: $Tag"
 
 $totalLogins = $logins.Count
 for ($i = 0; $i -lt $totalLogins; $i++) {

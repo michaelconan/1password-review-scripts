@@ -20,13 +20,15 @@
 
 param([string]$Vault = "private")
 
+$ITEM_CATEGORIES = @("login", "api credential", "password")
 $SSO_TAG = "secure/sso"
 $PASSKEY_TAG = "secure/passkey"
 $EXCLUDE_TAG = "other/*"
 
 # retrieve all logins from the specified vault
-$logins = op item list --categories login --format json --vault $Vault | ConvertFrom-Json
-Write-Output "Found $($logins.Count) logins in the vault $Vault"
+$categoryString = $ITEM_CATEGORIES -Join ","
+$logins = op item list --categories $categoryString --format json --vault $Vault | ConvertFrom-Json
+Write-Output "Found $($logins.Count) items matching $categoryString in the vault $Vault"
 
 $totalLogins = $logins.Count
 for ($i = 0; $i -lt $totalLogins; $i++) {
