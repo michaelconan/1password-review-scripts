@@ -18,17 +18,13 @@
 
 param([string]$Vault = "private")
 
+. "$PSScriptRoot\Utils.ps1"
+
 # item categories to check for untagged items
 $CATEGORIES = @("login", "password", "api credential")
 $EXCLUDE_TAGS = "secure*"
 
-# retrieve extended items from the specified vault
-$items = op item list --categories $($CATEGORIES -join ",") --format json --vault $Vault --long | ConvertFrom-Json
+$items = Get-VaultItems -Vault $Vault -Categories $CATEGORIES -Long
 
-# filter for untagged items and print the results
-$items | Where-Object { 
-    # no tags at all
-    ($null -eq $_.tags) -or
-    # only exclude tags
-    ($_.tags -is [array] -and ($_.tags | Where-Object { $_ -notlike $EXCLUDE_TAGS } | Measure-Object).Count -eq 0)
-} | Select-Object -Property title,category,id,vault
+$items | Where-Object { Test-ItemUntagged -Item $_ -ExcludePattern $EXCLUDE_TAGS } |
+    Select-Object -Property title, category, id, vault
