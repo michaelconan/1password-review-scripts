@@ -325,8 +325,8 @@ Describe "Get-WordList" {
         $result = Get-WordList -CachePath $testCache
 
         Test-Path $testCache | Should -Be $true
-        $result -contains "able" | Should -Be $true
-        $result -contains "bird" | Should -Be $true
+        $result | Should -Contain "able"
+        $result | Should -Contain "bird"
     }
 
     It "does not download when cache already exists" {
@@ -345,8 +345,8 @@ Describe "Get-WordList" {
 
         $result = Get-WordList -CachePath $testCache
 
-        $result -contains "ab"   | Should -Be $false
-        $result -contains "able" | Should -Be $true
+        $result | Should -Not -Contain "ab"
+        $result | Should -Contain "able"
     }
 
     It "filters out words longer than 8 characters" {
@@ -357,8 +357,8 @@ Describe "Get-WordList" {
 
         $result = Get-WordList -CachePath $testCache
 
-        $result -contains "able"         | Should -Be $true
-        $result -contains "verylongword" | Should -Be $false
+        $result | Should -Contain "able"
+        $result | Should -Not -Contain "verylongword"
     }
 }
 
@@ -397,7 +397,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
         $wordSegments = $result -split '\d' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment.ToLower() | Should -Be $true
+            $knownWords | Should -Contain $segment.ToLower()
         }
     }
 
@@ -405,7 +405,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "symbols") -Length 20
         $wordSegments = $result -split '[!@#$%^&*\-_]' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment.ToLower() | Should -Be $true
+            $knownWords | Should -Contain $segment.ToLower()
         }
     }
 
