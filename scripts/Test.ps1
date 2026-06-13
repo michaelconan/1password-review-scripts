@@ -17,7 +17,8 @@ if (-not (Test-Path $reportDir)) {
 
 $config = New-PesterConfiguration
 $config.Run.Path = $testPath
-$config.Run.Exit = $true
+$config.Run.Exit = $false # Handle exit manually to allow summary generation
+$config.Run.PassThru = $true # Return results object
 $config.TestResult.Enabled = $true
 $config.TestResult.OutputPath = Join-Path $reportDir 'test-results.xml'
 $config.TestResult.OutputFormat = 'NUnitXml'
@@ -66,5 +67,6 @@ if ($IncludeCoverage.IsPresent) {
 }
 
 if ($result.FailedCount -gt 0) {
+    Write-Error "Tests failed: $($result.FailedCount) failed tests."
     exit 1
 }

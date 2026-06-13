@@ -363,11 +363,13 @@ Describe "Get-WordList" {
 # ── New-MemorablePassword ─────────────────────────────────────────────────────
 
 Describe "New-MemorablePassword" {
-    # All test words are 4 characters for predictable length arithmetic
-    $knownWords = @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike")
+    BeforeAll {
+        # All test words are 4 characters for predictable length arithmetic
+        $knownWords = @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike")
+    }
 
     BeforeEach {
-        Mock Get-WordList { return @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike") }
+        Mock Get-WordList { return $knownWords }
     }
 
     It "returns exactly 12 characters" {
