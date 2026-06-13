@@ -10,6 +10,18 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $testPath = Join-Path $repoRoot 'tests\Utils.Tests.ps1'
 $coveragePath = Join-Path $repoRoot 'Utils.ps1'
 $reportDir = Join-Path $repoRoot 'coverage'
+$pesterVersion = '3.4.0'
+
+if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -eq $pesterVersion })) {
+    Write-Host "Installing Pester $pesterVersion..."
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    Install-Module -Name Pester -RequiredVersion $pesterVersion -Force -SkipPublisherCheck -Scope CurrentUser
+}
+
+if (Get-Module -Name Pester) {
+    Remove-Module -Name Pester -Force
+}
+Import-Module -Name Pester -RequiredVersion $pesterVersion -Force
 
 $pesterParams = @{
     Path       = $testPath
