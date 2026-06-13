@@ -50,6 +50,139 @@ BeforeAll {
 
 # ── Get-ItemField ─────────────────────────────────────────────────────────────
 
+Describe "Get-VaultItems" {
+    It "passes filters to op and parses the item list" {
+        Mock op {
+            $script:CapturedOpArgs = $args
+            return '[{"id":"one","title":"One"}]'
+        }
+
+        $result = Get-VaultItems -Vault "private" -Categories @("login", "password") -Tag "finance" -Long
+
+        $result.Count | Should -Be 1
+        $result[0].id | Should -Be "one"
+        $script:CapturedOpArgs | Should -Contain "--vault"
+        $script:CapturedOpArgs | Should -Contain "private"
+        $script:CapturedOpArgs | Should -Contain "--categories"
+        $script:CapturedOpArgs | Should -Contain "login,password"
+        $script:CapturedOpArgs | Should -Contain "--tags"
+        $script:CapturedOpArgs | Should -Contain "finance"
+        $script:CapturedOpArgs | Should -Contain "--long"
+    }
+
+    It "omits optional filters when they are not supplied" {
+        Mock op {
+            $script:CapturedOpArgs = $args
+            return '[]'
+        }
+
+        $result = Get-VaultItems -Vault "private"
+
+        $result.Count | Should -Be 0
+        $script:CapturedOpArgs | Should -Contain "--vault"
+        $script:CapturedOpArgs | Should -Not -Contain "--categories"
+        $script:CapturedOpArgs | Should -Not -Contain "--tags"
+        $script:CapturedOpArgs | Should -Not -Contain "--long"
+    }
+}
+
+# ── Get-ItemDetail ────────────────────────────────────────────────────────────
+
+Describe "Test-OpTransientError" {
+    It "returns true for known transient op messages" {
+        Test-OpTransientError "request timed out while connecting to desktop app" | Should -Be $true
+    }
+
+    It "returns false for non-transient op messages" {
+        Test-OpTransientError "authentication required" | Should -Be $false
+    }
+}
+
+Describe "Get-ItemDetail" {
+    It "passes the vault to op and parses item details" {
+        Mock op {
+            $script:CapturedOpArgs = $args
+            $global:LASTEXITCODE = 0
+            return '{"id":"abc","title":"Example"}'
+        }
+
+        $result = Get-ItemDetail -Id "abc" -Vault "private"
+
+        $result.id | Should -Be "abc"
+        $script:CapturedOpArgs | Should -Contain "--vault"
+        $script:CapturedOpArgs | Should -Contain "private"
+    }
+
+    It "retries transient op failures before returning details" {
+        $script:AttemptCount = 0
+        Mock op {
+            $script:AttemptCount++
+            if ($script:AttemptCount -eq 1) {
+                $global:LASTEXITCODE = 1
+                return "timed out while connecting to desktop app"
+            }
+            $global:LASTEXITCODE = 0
+            return '{"id":"retry-ok"}'
+        }
+
+        $result = Get-ItemDetail -Id "retry-ok" -MaxRetries 2 -RetryDelayMs 0
+
+        $result.id | Should -Be "retry-ok"
+        $script:AttemptCount | Should -Be 2
+    }
+
+    It "throws non-transient op errors without retrying" {
+        $script:AttemptCount = 0
+        Mock op {
+            $script:AttemptCount++
+            $global:LASTEXITCODE = 1
+            return "authentication required"
+        }
+
+        { Get-ItemDetail -Id "abc" -MaxRetries 2 -RetryDelayMs 0 } | Should -Throw "*authentication required*"
+        $script:AttemptCount | Should -Be 1
+    }
+}
+
+# ── Get-ItemDetails ───────────────────────────────────────────────────────────
+
+Describe "Get-ItemDetails" {
+    It "returns an empty array when no items are supplied" {
+        $result = Get-ItemDetails -Items @()
+        $result.Count | Should -Be 0
+    }
+
+    It "fetches item details in worker runspaces" {
+        $shimDir = Join-Path $TestDrive "bin"
+        New-Item -ItemType Directory -Path $shimDir | Out-Null
+        $opShim = Join-Path $shimDir "op.cmd"
+        @(
+            "@echo off"
+            "echo {""id"":""%5"",""title"":""Title %5""}"
+        ) | Set-Content -Path $opShim -Encoding ASCII
+
+        $oldPath = $env:PATH
+        $env:PATH = "$shimDir;$oldPath"
+
+        try {
+            $items = @(
+                [PSCustomObject]@{ id = "one"; title = "One" },
+                [PSCustomObject]@{ id = "two"; title = "Two" }
+            )
+
+            $result = Get-ItemDetails -Items $items -ThrottleLimit 2
+
+            $result.Count | Should -Be 2
+            $result[0].Login.title | Should -Be "One"
+            $result[0].Details.id | Should -Be "one"
+            $result[1].Login.title | Should -Be "Two"
+            $result[1].Details.id | Should -Be "two"
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
+}
+
 Describe "Get-ItemField" {
     It "returns field when found by id" {
         $details = New-FakeDetails -WithPassword
@@ -327,6 +460,30 @@ Describe "Get-WordList" {
         $result | Should -Contain "bird"
     }
 
+    It "creates the cache directory when it is missing" {
+        $testCache = Join-Path (Join-Path $TestDrive "nested") "wordlist.txt"
+        Mock Invoke-WebRequest {
+            [PSCustomObject]@{ Content = "11111`table`n11112`tbird`n" }
+        }
+
+        $result = Get-WordList -CachePath $testCache
+
+        Test-Path (Split-Path $testCache) | Should -Be $true
+        Test-Path $testCache | Should -Be $true
+        $result | Should -Contain "able"
+    }
+
+    It "reads words from an existing cache" {
+        $testCache = Join-Path $TestDrive "cached-read.txt"
+        @("able", "bird") | Out-File $testCache -Encoding UTF8
+        Mock Invoke-WebRequest { throw "Should not download" }
+
+        $result = Get-WordList -CachePath $testCache
+
+        $result | Should -Contain "able"
+        $result | Should -Contain "bird"
+    }
+
     It "does not download when cache already exists" {
         $testCache = Join-Path $TestDrive "cached.txt"
         @("able", "bird") | Out-File $testCache -Encoding UTF8
@@ -425,5 +582,12 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 13
         $result.Length | Should -Be 13
         $result | Should -Match '\d'
+    }
+
+    It "fills a short words-only password with lowercase letters when no word fits" {
+        $result = New-MemorablePassword -RecipeParts @("words") -Length 2
+
+        $result.Length | Should -Be 2
+        $result | Should -Match '^[a-z]{2}$'
     }
 }
