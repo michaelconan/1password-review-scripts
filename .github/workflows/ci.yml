@@ -30,6 +30,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install 1Password CLI
+        shell: pwsh
+        run: |
+          winget install --id AgileBits.1Password.CLI --exact --accept-source-agreements --accept-package-agreements
+          op --version
+
       - name: Install Pester
         shell: pwsh
         run: |
