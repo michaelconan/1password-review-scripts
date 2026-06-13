@@ -1,2 +1,5 @@
 # Exported data files
 *.csv
+
+# Generated CI output
+coverage/

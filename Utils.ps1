@@ -187,6 +187,7 @@ function Get-ItemExtendedInfo {
         Title        = $Details.title
         Username     = $usernameField.value
         Category     = $Details.category
+        Tags         = ($Details.tags -join ",")
         Id           = $Details.id
         Vault        = $Details.vault.name
         Security     = ($security -join ",")

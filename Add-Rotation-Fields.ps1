@@ -22,11 +22,12 @@ param([string]$Vault = "private")
 
 . "$PSScriptRoot\Utils.ps1"
 
+$ITEM_CATEGORIES = @("login", "api credential", "password")
 $SSO_TAG = "secure/sso"
 $EXCLUDE_TAG = "other/*"
 
-$logins = Get-VaultItems -Vault $Vault -Categories @("login")
-Write-Output "Found $($logins.Count) logins in the vault $Vault"
+$logins = Get-VaultItems -Vault $Vault -Categories $ITEM_CATEGORIES
+Write-Output "Found $($logins.Count) items matching $($ITEM_CATEGORIES -join ',') in the vault $Vault"
 
 foreach ($pair in (Get-ItemDetails -Items $logins)) {
     $login   = $pair.Login
