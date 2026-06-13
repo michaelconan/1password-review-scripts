@@ -8,7 +8,9 @@ PowerShell scripts for administrative management of a 1Password vault. They run 
 
 - [1Password CLI](https://developer.1password.com/docs/cli) installed and on `PATH`
 - An active `op` session (`op signin`)
-- Windows PowerShell 5.1 (scripts use `.ps1` syntax and are not tested on PowerShell 7+)
+- Windows PowerShell 5.1 for script compatibility
+- PowerShell 7+ is supported for development tooling and used by CI
+- Pester 5+ for unit tests and coverage
 
 ## Repository layout
 
@@ -19,8 +21,12 @@ Add-Rotation-Fields.ps1        # Setup: add rotation metadata to logins
 Get-Stale-Items.ps1            # Audit: logins overdue for a password change
 New-Item-Password.ps1          # Action: generate a new password for one item
 Get-All-Items-Extended.ps1     # Export: full vault export with security metadata
+scripts/
+  Lint.ps1                     # PSScriptAnalyzer wrapper
+  Test.ps1                     # Pester 5 test and coverage wrapper
 tests/
-  Utils.Tests.ps1              # Pester 3.4.0 unit tests for Utils.ps1
+  Utils.Tests.ps1              # Pester 5 unit tests for Utils.ps1
+codecov.yml                    # Codecov PR comments and coverage targets
 ```
 
 ## Scripts
@@ -97,7 +103,7 @@ Output is a table sorted by `DaysSinceUpdate` descending.
 ### `New-Item-Password.ps1`
 Generates a new password for a single item and updates its `last password update` date to today.
 
-The password recipe is read from a custom `password recipe` field on the item. If that field is absent, the default recipe `letters,digits,symbols,32` is used. Recipe format is the same comma-separated string accepted by the `op --generate-password` flag, with one extension: a recipe containing `words` triggers local memorable-password generation (see [Memorable passwords](#memorable-passwords)) since the CLI does not support word-based generation natively.
+The password recipe is read from a custom `password recipe` field on the item. If that field is absent, the default recipe `words,digits,symbols,32` is used. Recipe format is the same comma-separated string accepted by the `op --generate-password` flag, with one extension: a recipe containing `words` triggers local memorable-password generation (see [Memorable passwords](#memorable-passwords)) since the CLI does not support word-based generation natively.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -118,10 +124,11 @@ Every script dot-sources `Utils.ps1` at the top via `. "$PSScriptRoot\Utils.ps1"
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `Get-VaultItems` | `-Vault -Categories[] [-Tag] [-Long]` | Wraps `op item list`; returns parsed JSON array |
-| `Get-ItemDetail` | `-Id [-Vault]` | Wraps `op item get`; returns parsed JSON object for one item |
-| `Get-ItemDetails` | `-Items [-ThrottleLimit=10]` | Fetches full details for a list of items **in parallel** using a runspace pool; returns `@{Login, Details}` pairs |
+| `Get-ItemDetail` | `-Id [-Vault] [-MaxRetries=3] [-RetryDelayMs=1000]` | Wraps `op item get`; retries transient CLI/Desktop App errors and returns parsed JSON for one item |
+| `Test-OpTransientError` | `-Message` | Detects retryable `op` errors such as timeouts, Desktop App connection issues, or temporary unavailability |
+| `Get-ItemDetails` | `-Items [-ThrottleLimit=10] [-MaxRetries=3] [-RetryDelayMs=1000]` | Fetches full details for a list of items **in parallel** using a runspace pool; returns `@{Login, Details}` pairs |
 
-`Get-ItemDetails` is the performance-critical path. It creates a `RunspacePool` with up to `ThrottleLimit` concurrent threads, fans out all `op item get` calls simultaneously, polls for completion with a `Write-Progress` bar, then collects results. Write operations (`op item edit`) are always kept sequential to avoid concurrent vault mutations.
+`Get-ItemDetails` is the performance-critical path. It creates a `RunspacePool` with up to `ThrottleLimit` concurrent threads, fans out all `op item get` calls simultaneously, polls for completion with a `Write-Progress` bar, then collects results. Transient failures are retried sequentially through `Get-ItemDetail`; non-transient failures are warned and skipped. Write operations (`op item edit`) are always kept sequential to avoid concurrent vault mutations.
 
 ### Item field helpers
 
@@ -153,7 +160,7 @@ The `last password update` field in 1Password stores its value as a Unix timesta
 | `Get-PasswordRecipe` | `-Details -Default` | Returns the value of the `password recipe` field, or `Default` if the field is absent |
 | `Test-ItemSso` | `-Details -SsoTag` | Returns `$true` if the item has a `sign in with` field or the given SSO tag |
 | `Test-ItemMfa` | `-Details -MfaTag` | Returns `$true` if the item carries the given MFA tag |
-| `Get-ItemExtendedInfo` | `-Details -ExcludePattern -SsoTag -MfaTag` | Returns a `PSCustomObject {Title, Username, Category, Id, Vault, Security, Recipe, LastPwUpdate, DaysSince}` for one item, or `$null` for excluded items. Falls back to `created_at` when no rotation field exists |
+| `Get-ItemExtendedInfo` | `-Details -ExcludePattern -SsoTag -MfaTag` | Returns a `PSCustomObject {Title, Username, Category, Tags, Id, Vault, Security, Recipe, LastPwUpdate, DaysSince}` for one item, or `$null` for excluded items. Falls back to `created_at` when no rotation field exists |
 
 ### Password generation
 
@@ -192,22 +199,41 @@ The scripts read and write the following custom fields by label:
 | `secure*` | Any secure tag; treated as non-significant for untagged detection |
 | `finance`, `main` | Rotation cadence tags (90-day cycle) |
 
-## Testing
+## Testing and coverage
 
-Tests use **Pester 3.4.0** (the version pre-installed with Windows PowerShell). Do not use Pester 5 syntax (`Should -Be`, top-level `BeforeAll`, `-ForEach` on `It`) — it will fail on the system Pester. See [issue #5](https://github.com/michaelconan/1password-review-scripts/issues/5) for the upgrade plan.
+Tests use **Pester 5+**. Use modern Pester constructs such as `BeforeAll`, `BeforeEach`, and `Should -Be`; legacy syntax compatibility is no longer required.
 
 Run the suite:
 
 ```powershell
-Invoke-Pester -Path tests\Utils.Tests.ps1
+.\scripts\Test.ps1
+.\scripts\Test.ps1 -IncludeCoverage
 ```
 
-36 tests cover all functions in `Utils.ps1` except the two thin `op` CLI wrappers (`Get-VaultItems`, `Get-ItemDetail`) and the parallel fetcher (`Get-ItemDetails`), which are integration concerns. Business logic functions are tested with plain `PSCustomObject` fixtures — no mocking of external commands required.
+`scripts\Test.ps1` creates `coverage/` when needed, runs all tests under `tests/`, writes `coverage/test-results.xml`, and, with `-IncludeCoverage`, writes `coverage/coverage.xml`, `coverage/summary.txt`, and `coverage/missed-commands.txt`. The script disables Pester's built-in test-result exporter and writes a small JUnit-style XML file itself because Pester's exporter can call Windows environment probes that fail under restricted runners.
+
+The coverage target is **80%** for `Utils.ps1`; `scripts\Test.ps1 -IncludeCoverage` fails if coverage falls below the target. Current coverage is over 90% with 61 tests. `codecov.yml` also configures Codecov PR comments and 80% project/patch status targets.
+
+Unit tests cover pure utility behavior, CLI wrapper argument construction, retry handling, and the parallel fetcher. CLI calls are mocked where possible; the `Get-ItemDetails` runspace test uses a temporary `op.cmd` shim on `PATH` so worker runspaces can execute the production command shape without requiring a real 1Password session.
 
 Test fixtures are defined as script-level helper functions at the top of `tests\Utils.Tests.ps1`:
 
 - `New-FakeDetails` — builds a fake item details object with optional password, rotation field, recipe field, tags, and SSO field
 - `New-FakeLogin` — builds a fake item summary object with an id and title
+
+Run linting with:
+
+```powershell
+.\scripts\Lint.ps1
+```
+
+Known lint output currently includes warning-level findings only; CI treats the current wrapper exit status as authoritative.
+
+## CI and artifacts
+
+GitHub Actions runs lint and test/coverage jobs on pushes to `main` and pull requests. The coverage job installs Pester 5, runs `scripts\Test.ps1 -IncludeCoverage`, publishes `coverage/summary.txt` to the step summary, uploads `coverage/coverage.xml` to Codecov, and stores the `coverage/` directory as an artifact.
+
+Generated files under `coverage/` and exported `*.csv` files are ignored by Git.
 
 ## Known limitations
 
