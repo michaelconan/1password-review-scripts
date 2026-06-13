@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Force -Scope AllUsers
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: ./scripts/Lint.ps1
+
+  test:
+    name: Test and coverage
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run unit tests with coverage
+        shell: powershell
+        run: ./scripts/Test.ps1 -IncludeCoverage
+
+      - name: Publish coverage summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path coverage/summary.txt) {
+            Get-Content coverage/summary.txt | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload test and coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
