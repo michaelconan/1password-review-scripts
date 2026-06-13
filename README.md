@@ -4,7 +4,12 @@ Administrative management scripts to configure, review, and update items stored 
 
 ## Setup
 
-The scripts require a 1password subscription and an installation of the [1password command line interface](https://developer.1password.com/docs/cli). On Windows (currently) bash is not fully supported, so the scripts use PowerShell.
+The scripts require:
+- A [1Password subscription](https://1password.com/).
+- The [1Password CLI](https://developer.1password.com/docs/cli) (op) installed and configured.
+- [PowerShell](https://github.com/PowerShell/PowerShell) (Core) 7.0 or newer is recommended for the best experience, although PowerShell 5.1 is supported.
+
+On Windows, these scripts are designed to run in PowerShell.
 
 ## Management Scripts
 

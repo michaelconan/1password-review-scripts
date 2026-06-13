@@ -7,46 +7,37 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$testPath = Join-Path $repoRoot 'tests\Utils.Tests.ps1'
+$testPath = Join-Path $repoRoot 'tests'
 $coveragePath = Join-Path $repoRoot 'Utils.ps1'
 $reportDir = Join-Path $repoRoot 'coverage'
-$pesterVersion = '3.4.0'
 
-if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -eq $pesterVersion })) {
-    Write-Host "Installing Pester $pesterVersion..."
-    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-    Install-Module -Name Pester -RequiredVersion $pesterVersion -Force -SkipPublisherCheck -Scope CurrentUser
+if (-not (Test-Path $reportDir)) {
+    New-Item -ItemType Directory -Path $reportDir | Out-Null
 }
 
-if (Get-Module -Name Pester) {
-    Remove-Module -Name Pester -Force
-}
-Import-Module -Name Pester -RequiredVersion $pesterVersion -Force
-
-$pesterParams = @{
-    Path       = $testPath
-    PassThru   = $true
-    EnableExit = $true
-}
+$config = New-PesterConfiguration
+$config.Run.Path = $testPath
+$config.Run.Exit = $false # Handle exit manually to allow summary generation
+$config.Run.PassThru = $true # Return results object
+$config.TestResult.Enabled = $true
+$config.TestResult.OutputPath = Join-Path $reportDir 'test-results.xml'
+$config.TestResult.OutputFormat = 'NUnitXml'
 
 if ($IncludeCoverage) {
-    $pesterParams['CodeCoverage'] = $coveragePath
-    if (-not (Test-Path $reportDir)) {
-        New-Item -ItemType Directory -Path $reportDir | Out-Null
-    }
-    $pesterParams['OutputFile'] = Join-Path $reportDir 'test-results.xml'
-    $pesterParams['OutputFormat'] = 'NUnitXml'
+    $config.CodeCoverage.Enabled = $true
+    $config.CodeCoverage.Path = $coveragePath
+    $config.CodeCoverage.OutputPath = Join-Path $reportDir 'coverage.xml'
+    $config.CodeCoverage.OutputFormat = 'JaCoCo'
 }
 
-$result = Invoke-Pester @pesterParams
-
-Write-Host "Tests: $($result.PassedCount) passed, $($result.FailedCount) failed"
+$result = Invoke-Pester -Configuration $config
 
 if ($IncludeCoverage.IsPresent) {
-    if ($null -eq $result.CodeCoverage) {
+    $coverageReport = $result.CodeCoverage
+    if ($null -eq $coverageReport) {
         Write-Warning 'Coverage was requested but no coverage data was returned.'
     } else {
-        $coverageReport = $result.CodeCoverage
+        # Pester 5 still uses these property names for the summary display
         $pct = if ($coverageReport.NumberOfCommandsAnalyzed -gt 0) {
             [math]::Round(($coverageReport.NumberOfCommandsExecuted / $coverageReport.NumberOfCommandsAnalyzed) * 100, 2)
         } else {
@@ -76,5 +67,6 @@ if ($IncludeCoverage.IsPresent) {
 }
 
 if ($result.FailedCount -gt 0) {
+    Write-Error "Tests failed: $($result.FailedCount) failed tests."
     exit 1
 }

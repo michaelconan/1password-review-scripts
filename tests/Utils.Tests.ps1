@@ -1,182 +1,172 @@
-# ── Shared test fixtures ──────────────────────────────────────────────────────
+BeforeAll {
+    . "$PSScriptRoot\..\Utils.ps1"
 
-function New-FakeDetails {
-    param(
-        [switch]$WithPassword,
-        [switch]$WithRotationField,
-        [long]$RotationTimestamp = 0,
-        [string]$RecipeValue = '',
-        [string[]]$Tags = @(),
-        [switch]$WithSignInWith,
-        [string]$Title = 'Test Item',
-        [string]$Category = 'LOGIN',
-        [string]$VaultName = 'private',
-        [string]$CreatedAt = '2020-01-01T00:00:00Z',
-        [string]$Username = ''
-    )
-    $fields = @()
-    if ($Username) {
-        $fields += [PSCustomObject]@{ id = "username"; label = "username"; value = $Username }
+    function New-FakeDetails {
+        param(
+            [switch]$WithPassword,
+            [switch]$WithRotationField,
+            [long]$RotationTimestamp = 0,
+            [string]$RecipeValue = '',
+            [string[]]$Tags = @(),
+            [switch]$WithSignInWith,
+            [string]$Title = 'Test Item',
+            [string]$Category = 'LOGIN',
+            [string]$VaultName = 'private',
+            [string]$CreatedAt = '2020-01-01T00:00:00Z',
+            [string]$Username = ''
+        )
+        $fields = @()
+        if ($Username) {
+            $fields += [PSCustomObject]@{ id = "username"; label = "username"; value = $Username }
+        }
+        if ($WithPassword) {
+            $fields += [PSCustomObject]@{ id = "password"; label = "password"; value = "secret" }
+        }
+        if ($WithRotationField) {
+            $fields += [PSCustomObject]@{ id = "rot"; label = "last password update"; value = $RotationTimestamp }
+        }
+        if ($RecipeValue) {
+            $fields += [PSCustomObject]@{ id = "rec"; label = "password recipe"; value = $RecipeValue }
+        }
+        if ($WithSignInWith) {
+            $fields += [PSCustomObject]@{ id = "sso"; label = "sign in with"; value = "Google" }
+        }
+        return [PSCustomObject]@{
+            id         = "item1"
+            title      = $Title
+            category   = $Category
+            created_at = $CreatedAt
+            vault      = [PSCustomObject]@{ name = $VaultName }
+            fields     = $fields
+            tags       = $Tags
+        }
     }
-    if ($WithPassword) {
-        $fields += [PSCustomObject]@{ id = "password"; label = "password"; value = "secret" }
-    }
-    if ($WithRotationField) {
-        $fields += [PSCustomObject]@{ id = "rot"; label = "last password update"; value = $RotationTimestamp }
-    }
-    if ($RecipeValue) {
-        $fields += [PSCustomObject]@{ id = "rec"; label = "password recipe"; value = $RecipeValue }
-    }
-    if ($WithSignInWith) {
-        $fields += [PSCustomObject]@{ id = "sso"; label = "sign in with"; value = "Google" }
-    }
-    return [PSCustomObject]@{
-        id         = "item1"
-        title      = $Title
-        category   = $Category
-        created_at = $CreatedAt
-        vault      = [PSCustomObject]@{ name = $VaultName }
-        fields     = $fields
-        tags       = $Tags
-    }
-}
 
-function New-FakeLogin {
-    param([string]$Id = "item1", [string]$Title = "Test Item")
-    return [PSCustomObject]@{ id = $Id; title = $Title }
+    function New-FakeLogin {
+        param([string]$Id = "item1", [string]$Title = "Test Item")
+        return [PSCustomObject]@{ id = $Id; title = $Title }
+    }
 }
 
 # ── Get-ItemField ─────────────────────────────────────────────────────────────
 
 Describe "Get-ItemField" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns field when found by id" {
         $details = New-FakeDetails -WithPassword
         $result = Get-ItemField -Details $details -Id "password"
-        $result | Should Not Be $null
-        $result.value | Should Be "secret"
+        $result | Should -Not -BeNullOrEmpty
+        $result.value | Should -Be "secret"
     }
 
     It "returns null when field id does not exist" {
         $details = New-FakeDetails
         $result = Get-ItemField -Details $details -Id "password"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "returns field when found by label" {
         $details = New-FakeDetails -RecipeValue "words,digits,32"
         $result = Get-ItemField -Details $details -Label "password recipe"
-        $result | Should Not Be $null
-        $result.value | Should Be "words,digits,32"
+        $result | Should -Not -BeNullOrEmpty
+        $result.value | Should -Be "words,digits,32"
     }
 
     It "returns null when field label does not exist" {
         $details = New-FakeDetails
         $result = Get-ItemField -Details $details -Label "password recipe"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 }
 
 # ── Test-ItemExcluded ─────────────────────────────────────────────────────────
 
 Describe "Test-ItemExcluded" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns true when item has a matching excluded tag" {
         $details = New-FakeDetails -Tags @("other/personal")
-        Test-ItemExcluded -Details $details -Pattern "other/*" | Should Be $true
+        Test-ItemExcluded -Details $details -Pattern "other/*" | Should -Be $true
     }
 
     It "returns false when item has no matching excluded tag" {
         $details = New-FakeDetails -Tags @("finance", "main")
-        Test-ItemExcluded -Details $details -Pattern "other/*" | Should Be $false
+        Test-ItemExcluded -Details $details -Pattern "other/*" | Should -Be $false
     }
 
     It "returns false when item has no tags" {
         $details = New-FakeDetails
-        Test-ItemExcluded -Details $details -Pattern "other/*" | Should Be $false
+        Test-ItemExcluded -Details $details -Pattern "other/*" | Should -Be $false
     }
 }
 
 # ── Test-ItemUntagged ─────────────────────────────────────────────────────────
 
 Describe "Test-ItemUntagged" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns true when item has no tags" {
         $item = [PSCustomObject]@{ tags = $null }
-        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should Be $true
+        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should -Be $true
     }
 
     It "returns true when item has only excluded tags" {
         $item = [PSCustomObject]@{ tags = @("secure/work") }
-        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should Be $true
+        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should -Be $true
     }
 
     It "returns false when item has at least one non-excluded tag" {
         $item = [PSCustomObject]@{ tags = @("secure/work", "finance") }
-        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should Be $false
+        Test-ItemUntagged -Item $item -ExcludePattern "secure*" | Should -Be $false
     }
 }
 
 # ── ConvertFrom-UnixDate ──────────────────────────────────────────────────────
 
 Describe "ConvertFrom-UnixDate" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "converts timestamp 0 to 1970-01-01" {
         $result = ConvertFrom-UnixDate -Timestamp 0
-        $result.Year  | Should Be 1970
-        $result.Month | Should Be 1
-        $result.Day   | Should Be 1
+        $result.Year  | Should -Be 1970
+        $result.Month | Should -Be 1
+        $result.Day   | Should -Be 1
     }
 
     It "converts a known timestamp to the correct date" {
         # 1609459200 = 2021-01-01 00:00:00 UTC
         $result = ConvertFrom-UnixDate -Timestamp 1609459200
-        $result.Year  | Should Be 2021
-        $result.Month | Should Be 1
-        $result.Day   | Should Be 1
+        $result.Year  | Should -Be 2021
+        $result.Month | Should -Be 1
+        $result.Day   | Should -Be 1
     }
 }
 
 # ── Get-PasswordRecipe ────────────────────────────────────────────────────────
 
 Describe "Get-PasswordRecipe" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns the recipe field value when present" {
         $details = New-FakeDetails -RecipeValue "words,digits,32"
         $result = Get-PasswordRecipe -Details $details -Default "letters,digits,32"
-        $result | Should Be "words,digits,32"
+        $result | Should -Be "words,digits,32"
     }
 
     It "returns the default when no recipe field exists" {
         $details = New-FakeDetails
         $result = Get-PasswordRecipe -Details $details -Default "letters,digits,32"
-        $result | Should Be "letters,digits,32"
+        $result | Should -Be "letters,digits,32"
     }
 }
 
 # ── Test-NeedsRotationField ───────────────────────────────────────────────────
 
 Describe "Test-NeedsRotationField" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns false when item has no password field" {
         $details = New-FakeDetails
-        Test-NeedsRotationField -Details $details | Should Be $false
+        Test-NeedsRotationField -Details $details | Should -Be $false
     }
 
     It "returns false when item already has a rotation field" {
         $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp 1609459200
-        Test-NeedsRotationField -Details $details | Should Be $false
+        Test-NeedsRotationField -Details $details | Should -Be $false
     }
 
     It "returns true when item has a password but no rotation field" {
         $details = New-FakeDetails -WithPassword
-        Test-NeedsRotationField -Details $details | Should Be $true
+        Test-NeedsRotationField -Details $details | Should -Be $true
     }
 
     It "returns false when password field exists but has no value" {
@@ -184,38 +174,36 @@ Describe "Test-NeedsRotationField" {
             fields = @([PSCustomObject]@{ id = "password"; label = "password"; value = $null })
             tags   = @()
         }
-        Test-NeedsRotationField -Details $details | Should Be $false
+        Test-NeedsRotationField -Details $details | Should -Be $false
     }
 }
 
 # ── Get-StaleItemInfo ─────────────────────────────────────────────────────────
 
 Describe "Get-StaleItemInfo" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns null for an excluded item" {
         $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp 0 -Tags @("other/personal")
         $result = Get-StaleItemInfo -Login (New-FakeLogin) -Details $details -Days 90 -ExcludePattern "other/*"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "returns null when item has no password" {
         $details = New-FakeDetails -WithRotationField -RotationTimestamp 0
         $result = Get-StaleItemInfo -Login (New-FakeLogin) -Details $details -Days 90 -ExcludePattern "other/*"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "returns null when item has no rotation field" {
         $details = New-FakeDetails -WithPassword
         $result = Get-StaleItemInfo -Login (New-FakeLogin) -Details $details -Days 90 -ExcludePattern "other/*"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "returns null when item was updated within the cadence" {
         $recentTimestamp = [long][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp $recentTimestamp
         $result = Get-StaleItemInfo -Login (New-FakeLogin) -Details $details -Days 90 -ExcludePattern "other/*"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "returns stale info when item exceeds the cadence" {
@@ -223,117 +211,109 @@ Describe "Get-StaleItemInfo" {
         $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp 0
         $login = New-FakeLogin -Id "abc123" -Title "My Login"
         $result = Get-StaleItemInfo -Login $login -Details $details -Days 90 -ExcludePattern "other/*"
-        $result             | Should Not Be $null
-        $result.ID          | Should Be "abc123"
-        $result.Title       | Should Be "My Login"
-        $result.LastUpdate  | Should Be "1970-01-01"
-        $result.DaysSinceUpdate | Should BeGreaterThan 90
+        $result             | Should -Not -BeNullOrEmpty
+        $result.ID          | Should -Be "abc123"
+        $result.Title       | Should -Be "My Login"
+        $result.LastUpdate  | Should -Be "1970-01-01"
+        $result.DaysSinceUpdate | Should -BeGreaterThan 90
     }
 }
 
 # ── Test-ItemSso ─────────────────────────────────────────────────────────────
 
 Describe "Test-ItemSso" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns true when item has a 'sign in with' field" {
         $details = New-FakeDetails -WithSignInWith
-        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $true
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should -Be $true
     }
 
     It "returns true when item has the SSO tag" {
         $details = New-FakeDetails -Tags @("secure/sso")
-        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $true
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should -Be $true
     }
 
     It "returns false when item has neither a sign-in field nor the SSO tag" {
         $details = New-FakeDetails
-        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should Be $false
+        Test-ItemSso -Details $details -SsoTag "secure/sso" | Should -Be $false
     }
 }
 
 # ── Test-ItemMfa ──────────────────────────────────────────────────────────────
 
 Describe "Test-ItemMfa" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns true when item has the MFA tag" {
         $details = New-FakeDetails -Tags @("secure/mfa")
-        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should Be $true
+        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should -Be $true
     }
 
     It "returns false when item does not have the MFA tag" {
         $details = New-FakeDetails -Tags @("finance")
-        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should Be $false
+        Test-ItemMfa -Details $details -MfaTag "secure/mfa" | Should -Be $false
     }
 }
 
 # ── Get-ItemExtendedInfo ──────────────────────────────────────────────────────
 
 Describe "Get-ItemExtendedInfo" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "returns null for an excluded item" {
         $details = New-FakeDetails -Tags @("other/personal")
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result | Should Be $null
+        $result | Should -BeNullOrEmpty
     }
 
     It "includes SSO in Security when item has a sign-in field" {
         $details = New-FakeDetails -WithSignInWith
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.Security | Should Be "SSO"
+        $result.Security | Should -Be "SSO"
     }
 
     It "includes MFA in Security when item has the MFA tag" {
         $details = New-FakeDetails -Tags @("secure/mfa")
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.Security | Should Be "MFA"
+        $result.Security | Should -Be "MFA"
     }
 
     It "includes both SSO and MFA when both apply" {
         $details = New-FakeDetails -WithSignInWith -Tags @("secure/mfa")
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.Security | Should Be "SSO,MFA"
+        $result.Security | Should -Be "SSO,MFA"
     }
 
     It "falls back to created_at date when no rotation field is present" {
         $details = New-FakeDetails -WithPassword -CreatedAt "2022-06-15T00:00:00Z"
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.LastPwUpdate | Should Be "2022-06-15"
+        $result.LastPwUpdate | Should -Be "2022-06-15"
     }
 
     It "uses the rotation field date when present" {
         # 1609459200 = 2021-01-01
         $details = New-FakeDetails -WithPassword -WithRotationField -RotationTimestamp 1609459200
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.LastPwUpdate | Should Be "2021-01-01"
+        $result.LastPwUpdate | Should -Be "2021-01-01"
     }
 
     It "returns null recipe and dates for an item without a password" {
         $details = New-FakeDetails
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result         | Should Not Be $null
-        $result.Recipe  | Should Be $null
-        $result.LastPwUpdate | Should Be $null
-        $result.DaysSince    | Should Be $null
+        $result         | Should -Not -BeNullOrEmpty
+        $result.Recipe  | Should -BeNullOrEmpty
+        $result.LastPwUpdate | Should -BeNullOrEmpty
+        $result.DaysSince    | Should -BeNullOrEmpty
     }
 
     It "populates item metadata from Details" {
         $details = New-FakeDetails -Title "My Login" -Category "LOGIN" -VaultName "shared" -Username "user@example.com"
         $result = Get-ItemExtendedInfo -Details $details -ExcludePattern "other/*" -SsoTag "secure/sso" -MfaTag "secure/mfa"
-        $result.Title    | Should Be "My Login"
-        $result.Category | Should Be "LOGIN"
-        $result.Vault    | Should Be "shared"
-        $result.Username | Should Be "user@example.com"
+        $result.Title    | Should -Be "My Login"
+        $result.Category | Should -Be "LOGIN"
+        $result.Vault    | Should -Be "shared"
+        $result.Username | Should -Be "user@example.com"
     }
 }
 
 # ── Get-WordList ──────────────────────────────────────────────────────────────
 
 Describe "Get-WordList" {
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
-
     It "downloads and caches the word list on first use" {
         $testCache = Join-Path $TestDrive "wordlist.txt"
         Mock Invoke-WebRequest {
@@ -342,9 +322,9 @@ Describe "Get-WordList" {
 
         $result = Get-WordList -CachePath $testCache
 
-        Test-Path $testCache | Should Be $true
-        $result -contains "able" | Should Be $true
-        $result -contains "bird" | Should Be $true
+        Test-Path $testCache | Should -Be $true
+        $result | Should -Contain "able"
+        $result | Should -Contain "bird"
     }
 
     It "does not download when cache already exists" {
@@ -352,7 +332,7 @@ Describe "Get-WordList" {
         @("able", "bird") | Out-File $testCache -Encoding UTF8
         Mock Invoke-WebRequest { throw "Should not download" }
 
-        { Get-WordList -CachePath $testCache } | Should Not Throw
+        { Get-WordList -CachePath $testCache } | Should -Not -Throw
     }
 
     It "filters out words shorter than 3 characters" {
@@ -363,8 +343,8 @@ Describe "Get-WordList" {
 
         $result = Get-WordList -CachePath $testCache
 
-        $result -contains "ab"   | Should Be $false
-        $result -contains "able" | Should Be $true
+        $result | Should -Not -Contain "ab"
+        $result | Should -Contain "able"
     }
 
     It "filters out words longer than 8 characters" {
@@ -375,41 +355,41 @@ Describe "Get-WordList" {
 
         $result = Get-WordList -CachePath $testCache
 
-        $result -contains "able"         | Should Be $true
-        $result -contains "verylongword" | Should Be $false
+        $result | Should -Contain "able"
+        $result | Should -Not -Contain "verylongword"
     }
 }
 
 # ── New-MemorablePassword ─────────────────────────────────────────────────────
 
 Describe "New-MemorablePassword" {
-    # All test words are 4 characters for predictable length arithmetic
-    $knownWords = @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike")
-
-    BeforeAll { . "$PSScriptRoot\..\Utils.ps1" }
+    BeforeAll {
+        # All test words are 4 characters for predictable length arithmetic
+        $knownWords = @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike")
+    }
 
     BeforeEach {
-        Mock Get-WordList { return @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike") }
+        Mock Get-WordList { return $knownWords }
     }
 
     It "returns exactly 12 characters" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 12
-        $result.Length | Should Be 12
+        $result.Length | Should -Be 12
     }
 
     It "returns exactly 20 characters" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
-        $result.Length | Should Be 20
+        $result.Length | Should -Be 20
     }
 
     It "returns exactly 32 characters" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 32
-        $result.Length | Should Be 32
+        $result.Length | Should -Be 32
     }
 
     It "contains only alpha characters with a words-only recipe" {
         $result = New-MemorablePassword -RecipeParts @("words") -Length 20
-        $result | Should Match '^[a-zA-Z]+$'
+        $result | Should -Match '^[a-zA-Z]+$'
     }
 
     It "contains no truncated words with a digits recipe" {
@@ -417,7 +397,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
         $wordSegments = $result -split '\d' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment.ToLower() | Should Be $true
+            $knownWords | Should -Contain $segment.ToLower()
         }
     }
 
@@ -425,25 +405,25 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "symbols") -Length 20
         $wordSegments = $result -split '[!@#$%^&*\-_]' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords -contains $segment.ToLower() | Should Be $true
+            $knownWords | Should -Contain $segment.ToLower()
         }
     }
 
     It "always includes at least one digit with a words,digits recipe" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
-        $result | Should Match '\d'
+        $result | Should -Match '\d'
     }
 
     It "always includes at least one symbol with a words,symbols recipe" {
         $result = New-MemorablePassword -RecipeParts @("words", "symbols") -Length 20
-        $result | Should Match '[!@#$%^&*\-_]'
+        $result | Should -Match '[!@#$%^&*\-_]'
     }
 
     It "fills remainder with separators when no word fits the remaining space" {
         # Length 13 with 4-char words + digits: 2 full cycles = 10 chars, 3 remaining
         # maxWordLen becomes 2, no 2-char words in list, so fills with 3 digits
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 13
-        $result.Length | Should Be 13
-        $result | Should Match '\d'
+        $result.Length | Should -Be 13
+        $result | Should -Match '\d'
     }
 }
