@@ -33,12 +33,12 @@ $SSO_TAG     = "secure/sso"
 $MFA_TAG     = "secure/mfa"
 $EXCLUDE_TAG = "other/*"
 
-$items = Get-VaultItems -Vault $Vault
+$items = @(Get-VaultItems -Vault $Vault)
 Write-Output "Found $($items.Count) items in the vault $Vault"
 
-$results = Get-ItemDetails -Items $items | ForEach-Object {
+$results = @(Get-ItemDetails -Items $items | ForEach-Object {
     Get-ItemExtendedInfo -Details $_.Details -ExcludePattern $EXCLUDE_TAG -SsoTag $SSO_TAG -MfaTag $MFA_TAG
-} | Where-Object { $null -ne $_ }
+} | Where-Object { $null -ne $_ })
 
 $results | Sort-Object -Property DaysSince -Descending | Export-Csv -Path $ExportPath -NoTypeInformation
 Write-Output "Exported $($results.Count) items to $ExportPath"

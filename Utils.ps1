@@ -137,8 +137,9 @@ function Get-ItemDetails {
         $_.PS.Dispose()
     }
 
-    $pool.Close()
     $pool.Dispose()
+
+    $pool = $null
 
     if ($failed.Count -gt 0) {
         Write-Verbose "Retrying $($failed.Count) failed fetches sequentially..."
