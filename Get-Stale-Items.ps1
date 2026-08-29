@@ -37,13 +37,13 @@ $EXCLUDE_TAG = "other/*"
 
 $days = if ($CADENCES.ContainsKey($Tag)) { $CADENCES[$Tag] } else { 360 }
 
-$logins = Get-VaultItems -Vault $Vault -Categories $ITEM_CATEGORIES -Tag $Tag
+$logins = @(Get-VaultItems -Vault $Vault -Categories $ITEM_CATEGORIES -Tag $Tag)
 $stale = @()
 Write-Output "Reviewing $($logins.Count) items matching $($ITEM_CATEGORIES -join ',') with tag: $Tag"
 
-$stale = Get-ItemDetails -Items $logins | ForEach-Object {
+$stale = @(Get-ItemDetails -Items $logins | ForEach-Object {
     Get-StaleItemInfo -Login $_.Login -Details $_.Details -Days $days -ExcludePattern $EXCLUDE_TAG
-} | Where-Object { $null -ne $_ }
+} | Where-Object { $null -ne $_ })
 
 Write-Output "$($stale.Count) stale items with tag: $Tag"
 $stale | Sort-Object -Property DaysSinceUpdate -Descending | Format-Table -AutoSize

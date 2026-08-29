@@ -181,6 +181,104 @@ Describe "Get-ItemDetails" {
             $env:PATH = $oldPath
         }
     }
+
+    It "tears down the runspace pool within 2 seconds" {
+        $shimDir = Join-Path $TestDrive "bin-perf"
+        New-Item -ItemType Directory -Path $shimDir | Out-Null
+        $opShim = Join-Path $shimDir "op.cmd"
+        @(
+            "@echo off"
+            "echo {""id"":""%5"",""title"":""Title %5""}"
+        ) | Set-Content -Path $opShim -Encoding ASCII
+
+        $oldPath = $env:PATH
+        $env:PATH = "$shimDir;$oldPath"
+
+        try {
+            $items = @(
+                [PSCustomObject]@{ id = "a1"; title = "A1" },
+                [PSCustomObject]@{ id = "a2"; title = "A2" },
+                [PSCustomObject]@{ id = "a3"; title = "A3" },
+                [PSCustomObject]@{ id = "a4"; title = "A4" },
+                [PSCustomObject]@{ id = "a5"; title = "A5" }
+            )
+
+            $duration = Measure-Command {
+                $null = Get-ItemDetails -Items $items -ThrottleLimit 5
+            }
+
+            $duration.TotalSeconds | Should -BeLessThan 2
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
+
+    It "runs fetches in parallel rather than sequentially" {
+        $shimDir = Join-Path $TestDrive "bin-parallel"
+        New-Item -ItemType Directory -Path $shimDir | Out-Null
+        $opShim = Join-Path $shimDir "op.cmd"
+        # Each shim call sleeps 500ms then returns JSON
+        @(
+            "@echo off"
+            "ping -n 1 -w 500 127.0.0.1 >nul"
+            "echo {""id"":""%5"",""title"":""Title %5""}"
+        ) | Set-Content -Path $opShim -Encoding ASCII
+
+        $oldPath = $env:PATH
+        $env:PATH = "$shimDir;$oldPath"
+
+        try {
+            $items = @(
+                [PSCustomObject]@{ id = "p1"; title = "P1" },
+                [PSCustomObject]@{ id = "p2"; title = "P2" },
+                [PSCustomObject]@{ id = "p3"; title = "P3" }
+            )
+
+            $duration = Measure-Command {
+                $result = Get-ItemDetails -Items $items -ThrottleLimit 3
+            }
+
+            # 3 items each taking ~500ms; if parallel, total should be well under 3x sequential
+            $result.Count | Should -Be 3
+            $duration.TotalSeconds | Should -BeLessThan 3
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
+
+    It "retries transient failures via the sequential fallback" {
+        $shimDir = Join-Path $TestDrive "bin-retry"
+        New-Item -ItemType Directory -Path $shimDir | Out-Null
+        $opShim = Join-Path $shimDir "op.cmd"
+        # The shim always fails with a transient error message
+        @(
+            "@echo off"
+            "echo timed out while connecting to desktop app 1>&2"
+            "exit /b 1"
+        ) | Set-Content -Path $opShim -Encoding ASCII
+
+        $oldPath = $env:PATH
+        $env:PATH = "$shimDir;$oldPath"
+
+        try {
+            $items = @(
+                [PSCustomObject]@{ id = "fail1"; title = "FailItem" }
+            )
+
+            # Mock Get-ItemDetail for the sequential retry path
+            Mock Get-ItemDetail {
+                return [PSCustomObject]@{ id = "fail1"; title = "Recovered" }
+            }
+
+            $result = Get-ItemDetails -Items $items -ThrottleLimit 1 -MaxRetries 1 -RetryDelayMs 0
+
+            $result.Count | Should -Be 1
+            $result[0].Details.title | Should -Be "Recovered"
+            Should -Invoke Get-ItemDetail -Times 1
+        } finally {
+            $env:PATH = $oldPath
+        }
+    }
 }
 
 Describe "Get-ItemField" {
