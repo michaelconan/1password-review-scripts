@@ -10,10 +10,10 @@
     The name of the vault to retrieve items from. Default is "private".
 
     .EXAMPLE
-    PS> .\Get-Untagged-Items.ps1
+    PS> .\src\Get-Untagged-Items.ps1
 
     .EXAMPLE
-    PS> .\Get-Untagged-Items.ps1 -Vault Shared
+    PS> .\src\Get-Untagged-Items.ps1 -Vault Shared
 #>
 
 param([string]$Vault = "private")

@@ -15,12 +15,13 @@ PowerShell scripts for administrative management of a 1Password vault. They run 
 ## Repository layout
 
 ```
-Utils.ps1                      # Shared functions — dot-sourced by every script
-Get-Untagged-Items.ps1         # Audit: items with no meaningful tags
-Add-Rotation-Fields.ps1        # Setup: add rotation metadata to logins
-Get-Stale-Items.ps1            # Audit: logins overdue for a password change
-New-Item-Password.ps1          # Action: generate a new password for one item
-Get-All-Items-Extended.ps1     # Export: full vault export with security metadata
+src/
+  Utils.ps1                    # Shared functions — dot-sourced by every script
+  Get-Untagged-Items.ps1       # Audit: items with no meaningful tags
+  Add-Rotation-Fields.ps1      # Setup: add rotation metadata to logins
+  Get-Stale-Items.ps1          # Audit: logins overdue for a password change
+  New-Item-Password.ps1        # Action: generate a new password for one item
+  Get-All-Items-Extended.ps1   # Export: full vault export with security metadata
 scripts/
   Lint.ps1                     # PSScriptAnalyzer wrapper
   Test.ps1                     # Pester 5 test and coverage wrapper
@@ -32,21 +33,33 @@ codecov.yml                    # Codecov PR comments and coverage targets
 ## Scripts
 
 ### `Get-All-Items-Extended.ps1`
-Exports a full vault inventory to CSV, enriched with computed security metadata. For each item it records whether SSO or MFA applies, the last password update date (falling back to `created_at` when the rotation field is absent), and the password recipe. Items tagged `other/*` are excluded.
+Exports a full vault inventory to CSV, enriched with computed security metadata. For each item it records whether SSO or MFA applies, the last password update date (falling back to `created_at` when the rotation field is absent), and the password recipe. Items tagged `other/*` are excluded from the CSV. It can enumerate all vaults and optionally write one full-detail JSON file per item with `CONCEALED` field values masked.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `-Vault` | `private` | Vault to export |
 | `-ExportPath` | `items.csv` | Output CSV path (relative to current directory or absolute) |
+| `-AllVaults` | off | Export items from every visible vault |
+| `-JsonExportPath` | *(none)* | Directory for one masked full-detail JSON file per item |
 
 Output columns: `Title`, `Username`, `Category`, `Id`, `Vault`, `Security` (comma-separated flags: `SSO`, `MFA`), `Recipe`, `LastPwUpdate`, `DaysSince`.
 
 The output file is gitignored (`*.csv`).
 
+When the JSON export directory or CSV already contains identical content, the exporter leaves the
+existing file untouched and reports it as skipped. This preserves file timestamps for unchanged
+items while still detecting any change in the masked item detail or CSV output.
+When `-JsonExportPath` is provided, cached JSON details are reused when their `updated_at` value
+matches the current item-list value, avoiding an `op item get` call for unchanged items.
+
 ```powershell
-.\Get-All-Items-Extended.ps1
-.\Get-All-Items-Extended.ps1 -Vault Shared -ExportPath "C:\reports\vault.csv"
+.\src\Get-All-Items-Extended.ps1
+.\src\Get-All-Items-Extended.ps1 -Vault Shared -ExportPath "C:\reports\vault.csv"
+.\src\Get-All-Items-Extended.ps1 -AllVaults -JsonExportPath .\items-json
 ```
+
+The JSON files are queryable with the DuckDB view scripts `duckdb/items.sql` and
+`duckdb/fields.sql`; they create `items` and `fields` views, respectively.
 
 ### `Get-Untagged-Items.ps1`
 Lists login, password, and API credential items that have no tags (or only `secure*` tags, which are treated as non-significant). Intended as an audit pass before running the other scripts.
@@ -56,8 +69,8 @@ Lists login, password, and API credential items that have no tags (or only `secu
 | `-Vault`  | `private` | Vault to inspect |
 
 ```powershell
-.\Get-Untagged-Items.ps1
-.\Get-Untagged-Items.ps1 -Vault Shared
+.\src\Get-Untagged-Items.ps1
+.\src\Get-Untagged-Items.ps1 -Vault Shared
 ```
 
 ### `Add-Rotation-Fields.ps1`
@@ -73,8 +86,8 @@ Items tagged `other/*` are skipped entirely.
 | `-Vault`  | `private` | Vault to update |
 
 ```powershell
-.\Add-Rotation-Fields.ps1
-.\Add-Rotation-Fields.ps1 -Vault Shared
+.\src\Add-Rotation-Fields.ps1
+.\src\Add-Rotation-Fields.ps1 -Vault Shared
 ```
 
 ### `Get-Stale-Items.ps1`
@@ -96,8 +109,8 @@ Output is a table sorted by `DaysSinceUpdate` descending.
 | `-Tag`    | *(required)* | Tag to filter logins by |
 
 ```powershell
-.\Get-Stale-Items.ps1 -Tag finance
-.\Get-Stale-Items.ps1 -Vault Shared -Tag main
+.\src\Get-Stale-Items.ps1 -Tag finance
+.\src\Get-Stale-Items.ps1 -Vault Shared -Tag main
 ```
 
 ### `New-Item-Password.ps1`
@@ -111,13 +124,13 @@ The password recipe is read from a custom `password recipe` field on the item. I
 | `-Item`   | *(required)* | Item ID or title |
 
 ```powershell
-.\New-Item-Password.ps1 -Item "MyLogin"
-.\New-Item-Password.ps1 -Item "MyLogin" -Vault Shared
+.\src\New-Item-Password.ps1 -Item "MyLogin"
+.\src\New-Item-Password.ps1 -Item "MyLogin" -Vault Shared
 ```
 
 ## Shared utilities (`Utils.ps1`)
 
-Every script dot-sources `Utils.ps1` at the top via `. "$PSScriptRoot\Utils.ps1"`. The file is organised into six sections.
+Every script dot-sources `src/Utils.ps1` at the top via `. "$PSScriptRoot\Utils.ps1"`. The file is organised into six sections.
 
 ### 1Password CLI wrappers
 
@@ -212,7 +225,7 @@ Run the suite:
 
 `scripts\Test.ps1` creates `coverage/` when needed, runs all tests under `tests/`, writes `coverage/test-results.xml`, and, with `-IncludeCoverage`, writes `coverage/coverage.xml`, `coverage/summary.txt`, and `coverage/missed-commands.txt`. The script disables Pester's built-in test-result exporter and writes a small JUnit-style XML file itself because Pester's exporter can call Windows environment probes that fail under restricted runners.
 
-The coverage target is **80%** for `Utils.ps1`; `scripts\Test.ps1 -IncludeCoverage` fails if coverage falls below the target. Current coverage is over 90% with 61 tests. `codecov.yml` also configures Codecov PR comments and 80% project/patch status targets.
+The coverage target is **80%** for `src/Utils.ps1`; `scripts\Test.ps1 -IncludeCoverage` fails if coverage falls below the target. Current coverage is over 90% with 61 tests. `codecov.yml` also configures Codecov PR comments and 80% project/patch status targets.
 
 Unit tests cover pure utility behavior, CLI wrapper argument construction, retry handling, and the parallel fetcher. CLI calls are mocked where possible; the `Get-ItemDetails` runspace test uses a temporary `op.cmd` shim on `PATH` so worker runspaces can execute the production command shape without requiring a real 1Password session.
 

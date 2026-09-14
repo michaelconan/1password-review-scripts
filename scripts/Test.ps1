@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $testPath = Join-Path $repoRoot 'tests'
-$coveragePath = Join-Path $repoRoot 'Utils.ps1'
+$coveragePath = Join-Path $repoRoot 'src\Utils.ps1'
 $reportDir = Join-Path $repoRoot 'coverage'
 
 if (-not (Test-Path $reportDir)) {
@@ -89,7 +89,7 @@ if ($IncludeCoverage.IsPresent) {
             "Code coverage: $pct%"
             "Commands covered: $executedCount / $analyzedCount"
             "Coverage target: $CoverageTarget%"
-            "File: Utils.ps1"
+            "File: src\Utils.ps1"
         ) -join [Environment]::NewLine
 
         Write-Host $summary

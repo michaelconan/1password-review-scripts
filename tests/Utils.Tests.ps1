@@ -1,8 +1,8 @@
-BeforeAll {
-    . "$PSScriptRoot\..\Utils.ps1"
+    BeforeAll {
+    . "$PSScriptRoot\..\src\Utils.ps1"
 
-    function New-FakeDetails {
-        param(
+        function Get-FakeDetails {
+            param(
             [switch]$WithPassword,
             [switch]$WithRotationField,
             [long]$RotationTimestamp = 0,
@@ -42,13 +42,31 @@ BeforeAll {
         }
     }
 
-    function New-FakeLogin {
-        param([string]$Id = "item1", [string]$Title = "Test Item")
-        return [PSCustomObject]@{ id = $Id; title = $Title }
-    }
+        function Get-FakeLogin {
+            param([string]$Id = "item1", [string]$Title = "Test Item")
+            return [PSCustomObject]@{ id = $Id; title = $Title }
+        }
+        Set-Alias -Name New-FakeDetails -Value Get-FakeDetails
+        Set-Alias -Name New-FakeLogin -Value Get-FakeLogin
 }
 
-# ── Get-ItemField ─────────────────────────────────────────────────────────────
+# -- Get-Vaults and Get-ItemField ----------------------------------------------
+
+Describe "Get-Vaults" {
+    It "lists and parses vaults" {
+        Mock op {
+            $script:CapturedOpArgs = $args
+            return '[{"id":"v1","name":"Private"}]'
+        }
+
+        $result = Get-Vaults
+
+        $result[0].id | Should -Be "v1"
+        $script:CapturedOpArgs | Should -Contain "vault"
+        $script:CapturedOpArgs | Should -Contain "list"
+        $script:CapturedOpArgs | Should -Contain "--format"
+    }
+}
 
 Describe "Get-VaultItems" {
     It "passes filters to op and parses the item list" {
@@ -86,7 +104,7 @@ Describe "Get-VaultItems" {
     }
 }
 
-# ── Get-ItemDetail ────────────────────────────────────────────────────────────
+# -- Get-ItemDetail ------------------------------------------------------------
 
 Describe "Test-OpTransientError" {
     It "returns true for known transient op messages" {
@@ -144,7 +162,7 @@ Describe "Get-ItemDetail" {
     }
 }
 
-# ── Get-ItemDetails ───────────────────────────────────────────────────────────
+# -- Get-ItemDetails -----------------------------------------------------------
 
 Describe "Get-ItemDetails" {
     It "returns an empty array when no items are supplied" {
@@ -234,8 +252,9 @@ Describe "Get-ItemDetails" {
                 [PSCustomObject]@{ id = "p3"; title = "P3" }
             )
 
+            $result = Get-ItemDetails -Items $items -ThrottleLimit 3
             $duration = Measure-Command {
-                $result = Get-ItemDetails -Items $items -ThrottleLimit 3
+                Get-ItemDetails -Items $items -ThrottleLimit 3 | Out-Null
             }
 
             # 3 items each taking ~500ms; if parallel, total should be well under 3x sequential
@@ -281,6 +300,60 @@ Describe "Get-ItemDetails" {
     }
 }
 
+Describe "Protect-ConcealedFields" {
+    It "masks concealed fields without changing ordinary fields" {
+        $details = [PSCustomObject]@{
+            fields = @(
+                [PSCustomObject]@{ id = "password"; type = "CONCEALED"; value = "secret" }
+                [PSCustomObject]@{ id = "username"; type = "STRING"; value = "user@example.com" }
+            )
+        }
+
+        Protect-ConcealedFields -Value $details | Out-Null
+
+        $details.fields[0].value | Should -Be "********"
+        $details.fields[1].value | Should -Be "user@example.com"
+    }
+
+    It "masks concealed password history in both scalar and array forms" {
+        $details = [PSCustomObject]@{
+            fields = @(
+                [PSCustomObject]@{
+                    type = "CONCEALED"
+                    value = "current"
+                    password_details = [PSCustomObject]@{ history = @("old-one", "old-two") }
+                }
+                [PSCustomObject]@{
+                    type = "CONCEALED"
+                    value = "current"
+                    password_details = [PSCustomObject]@{ history = "old-password" }
+                }
+                [PSCustomObject]@{
+                    type = "CONCEALED"
+                    password_details = [PSCustomObject]@{ history = "old-without-current-value" }
+                }
+            )
+        }
+
+        Protect-ConcealedFields -Value $details | Out-Null
+
+        $details.fields[0].password_details.history | Should -Be @("********", "********")
+        $details.fields[1].password_details.history | Should -Be "********"
+        $details.fields[2].password_details.history | Should -Be "********"
+    }
+}
+
+Describe "Test-FileContentChanged" {
+    It "reports missing and changed files" {
+        $path = Join-Path $TestDrive "content.txt"
+
+        Test-FileContentChanged -Path $path -Content "one" | Should -BeTrue
+        Set-Content -Path $path -Value "one" -Encoding UTF8
+        Test-FileContentChanged -Path $path -Content "one" | Should -BeFalse
+        Test-FileContentChanged -Path $path -Content "two" | Should -BeTrue
+    }
+}
+
 Describe "Get-ItemField" {
     It "returns field when found by id" {
         $details = New-FakeDetails -WithPassword
@@ -309,7 +382,7 @@ Describe "Get-ItemField" {
     }
 }
 
-# ── Test-ItemExcluded ─────────────────────────────────────────────────────────
+# -- Test-ItemExcluded ---------------------------------------------------------
 
 Describe "Test-ItemExcluded" {
     It "returns true when item has a matching excluded tag" {
@@ -328,7 +401,7 @@ Describe "Test-ItemExcluded" {
     }
 }
 
-# ── Test-ItemUntagged ─────────────────────────────────────────────────────────
+# -- Test-ItemUntagged ---------------------------------------------------------
 
 Describe "Test-ItemUntagged" {
     It "returns true when item has no tags" {
@@ -347,7 +420,7 @@ Describe "Test-ItemUntagged" {
     }
 }
 
-# ── ConvertFrom-UnixDate ──────────────────────────────────────────────────────
+# -- ConvertFrom-UnixDate ------------------------------------------------------
 
 Describe "ConvertFrom-UnixDate" {
     It "converts timestamp 0 to 1970-01-01" {
@@ -366,7 +439,7 @@ Describe "ConvertFrom-UnixDate" {
     }
 }
 
-# ── Get-PasswordRecipe ────────────────────────────────────────────────────────
+# -- Get-PasswordRecipe --------------------------------------------------------
 
 Describe "Get-PasswordRecipe" {
     It "returns the recipe field value when present" {
@@ -382,7 +455,7 @@ Describe "Get-PasswordRecipe" {
     }
 }
 
-# ── Test-NeedsRotationField ───────────────────────────────────────────────────
+# -- Test-NeedsRotationField ---------------------------------------------------
 
 Describe "Test-NeedsRotationField" {
     It "returns false when item has no password field" {
@@ -409,7 +482,7 @@ Describe "Test-NeedsRotationField" {
     }
 }
 
-# ── Get-StaleItemInfo ─────────────────────────────────────────────────────────
+# -- Get-StaleItemInfo ---------------------------------------------------------
 
 Describe "Get-StaleItemInfo" {
     It "returns null for an excluded item" {
@@ -450,7 +523,7 @@ Describe "Get-StaleItemInfo" {
     }
 }
 
-# ── Test-ItemSso ─────────────────────────────────────────────────────────────
+# -- Test-ItemSso --------------------------------------------------------------
 
 Describe "Test-ItemSso" {
     It "returns true when item has a 'sign in with' field" {
@@ -469,7 +542,7 @@ Describe "Test-ItemSso" {
     }
 }
 
-# ── Test-ItemMfa ──────────────────────────────────────────────────────────────
+# -- Test-ItemMfa --------------------------------------------------------------
 
 Describe "Test-ItemMfa" {
     It "returns true when item has the MFA tag" {
@@ -483,7 +556,7 @@ Describe "Test-ItemMfa" {
     }
 }
 
-# ── Get-ItemExtendedInfo ──────────────────────────────────────────────────────
+# -- Get-ItemExtendedInfo ------------------------------------------------------
 
 Describe "Get-ItemExtendedInfo" {
     It "returns null for an excluded item" {
@@ -542,7 +615,7 @@ Describe "Get-ItemExtendedInfo" {
     }
 }
 
-# ── Get-WordList ──────────────────────────────────────────────────────────────
+# -- Get-WordList --------------------------------------------------------------
 
 Describe "Get-WordList" {
     It "downloads and caches the word list on first use" {
@@ -615,16 +688,12 @@ Describe "Get-WordList" {
     }
 }
 
-# ── New-MemorablePassword ─────────────────────────────────────────────────────
+# -- New-MemorablePassword -----------------------------------------------------
 
 Describe "New-MemorablePassword" {
-    BeforeAll {
-        # All test words are 4 characters for predictable length arithmetic
-        $knownWords = @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike")
-    }
-
     BeforeEach {
-        Mock Get-WordList { return $knownWords }
+        # All test words are 4 characters for predictable length arithmetic
+        Mock Get-WordList { return @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike") }
     }
 
     It "returns exactly 12 characters" {
@@ -652,7 +721,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "digits") -Length 20
         $wordSegments = $result -split '\d' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords | Should -Contain $segment.ToLower()
+            @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike") | Should -Contain $segment.ToLower()
         }
     }
 
@@ -660,7 +729,7 @@ Describe "New-MemorablePassword" {
         $result = New-MemorablePassword -RecipeParts @("words", "symbols") -Length 20
         $wordSegments = $result -split '[!@#$%^&*\-_]' | Where-Object { $_ -ne '' }
         foreach ($segment in $wordSegments) {
-            $knownWords | Should -Contain $segment.ToLower()
+            @("able", "bird", "calm", "desk", "edge", "fire", "gold", "hike") | Should -Contain $segment.ToLower()
         }
     }
 

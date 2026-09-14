@@ -16,7 +16,7 @@ if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
 }
 
 $paths = @(
-    (Join-Path $repoRoot '*.ps1')
+    (Join-Path $repoRoot 'src\*.ps1')
     (Join-Path $repoRoot 'tests\*.ps1')
 ) | ForEach-Object { Resolve-Path -Path $_ } | ForEach-Object { $_.Path }
 
