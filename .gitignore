@@ -1,5 +1,7 @@
 # Exported data files
 *.csv
+/items-json/
+*.duckdb
 
 # Generated CI output
 coverage/

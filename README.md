@@ -17,19 +17,40 @@ PowerShell scripts for auditing and maintaining 1Password vault items. The scrip
 | `Add-Rotation-Fields.ps1` | Adds missing `last password update` metadata to items with passwords. It also reports SSO items that should receive the `secure/sso` tag. |
 | `Get-Stale-Items.ps1` | Lists items whose `last password update` date is older than the configured cadence for a tag. |
 | `New-Item-Password.ps1` | Generates a new password for one item and updates its rotation date. |
-| `Get-All-Items-Extended.ps1` | Exports a CSV inventory with security metadata, recipe, last password update, and age. |
+| `Get-All-Items-Extended.ps1` | Exports a CSV inventory and optionally one masked full-detail JSON file per item. |
 
 ### Common Examples
 
 ```powershell
-.\Get-Untagged-Items.ps1 -Vault private
-.\Add-Rotation-Fields.ps1 -Vault Shared
-.\Get-Stale-Items.ps1 -Vault Shared -Tag finance
-.\New-Item-Password.ps1 -Vault private -Item "My Login"
-.\Get-All-Items-Extended.ps1 -Vault Shared -ExportPath .\items.csv
+.\src\Get-Untagged-Items.ps1 -Vault private
+.\src\Add-Rotation-Fields.ps1 -Vault Shared
+.\src\Get-Stale-Items.ps1 -Vault Shared -Tag finance
+.\src\New-Item-Password.ps1 -Vault private -Item "My Login"
+.\src\Get-All-Items-Extended.ps1 -Vault Shared -ExportPath .\items.csv
+.\src\Get-All-Items-Extended.ps1 -AllVaults -ExportPath .\all-items.csv -JsonExportPath .\items-json
 ```
 
-Generated CSV files are ignored by Git.
+`-AllVaults` enumerates every vault visible to the authenticated account. `-JsonExportPath` writes
+one JSON file per item. The files contain the complete detail response, but values of fields whose
+type is `CONCEALED` are replaced with `********`; the CLI is never asked to reveal concealed data.
+Existing JSON and CSV files are compared with the new content and left untouched when unchanged.
+When `-JsonExportPath` is provided, the JSON files also act as a cache: each item's `updated_at`
+value from the list response is compared with the cached detail, and unchanged items do not
+require an `op item get` call. Without `-JsonExportPath`, details must be fetched to build the CSV.
+Generated CSV files and the default `items-json` directory are ignored by Git.
+
+### DuckDB Views
+
+The JSON export can be queried in DuckDB without importing it into a separate database:
+
+```powershell
+duckdb review.duckdb -init .\duckdb\items.sql
+duckdb review.duckdb -init .\duckdb\fields.sql
+```
+
+The first script creates the `items` view over `items-json\*.json`. The second creates
+`fields`, one row per nested field with `item_id` referencing `items.id`. Run both scripts
+in the same DuckDB session, or use `.read duckdb/items.sql` and `.read duckdb/fields.sql`.
 
 ## Tags and Fields
 
@@ -89,9 +110,9 @@ make ci
 
 ## Testing and Coverage
 
-Unit tests live in `tests/Utils.Tests.ps1` and use Pester 5 syntax. The tests focus on pure utility behavior in `Utils.ps1`, with mocked `op` calls for CLI wrappers. Vault mutation commands remain integration concerns and are not run by the unit suite.
+Unit tests live in `tests/Utils.Tests.ps1` and use Pester 5 syntax. The tests focus on pure utility behavior in `src/Utils.ps1`, with mocked `op` calls for CLI wrappers. Vault mutation commands remain integration concerns and are not run by the unit suite.
 
-Coverage is collected for `Utils.ps1`:
+Coverage is collected for `src/Utils.ps1`:
 
 ```powershell
 .\scripts\Test.ps1 -IncludeCoverage

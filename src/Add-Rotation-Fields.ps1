@@ -12,10 +12,10 @@
     The name of the vault to retrieve logins from. Default is "private".
 
     .EXAMPLE
-    PS> .\Add-Rotation-Fields.ps1
+    PS> .\src\Add-Rotation-Fields.ps1
 
     .EXAMPLE
-    PS> .\Add-Rotation-Fields.ps1 -Vault shared
+    PS> .\src\Add-Rotation-Fields.ps1 -Vault shared
 #>
 
 param([string]$Vault = "private")

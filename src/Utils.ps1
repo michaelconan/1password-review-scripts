@@ -1,4 +1,8 @@
-# ── 1Password CLI wrappers ────────────────────────────────────────────────────
+# -- 1Password CLI wrappers ----------------------------------------------------
+
+function Get-Vaults {
+    op vault list --format json | ConvertFrom-Json
+}
 
 function Get-VaultItems {
     param(
@@ -49,7 +53,7 @@ function Get-ItemDetail {
     }
 }
 
-# ── Item field helpers ────────────────────────────────────────────────────────
+# -- Item field helpers --------------------------------------------------------
 
 function Get-ItemField {
     param($Details, [string]$Id = '', [string]$Label = '')
@@ -59,7 +63,7 @@ function Get-ItemField {
     return $Details.fields | Where-Object { $_.label -eq $Label } | Select-Object -First 1
 }
 
-# ── Tag helpers ───────────────────────────────────────────────────────────────
+# -- Tag helpers ---------------------------------------------------------------
 
 function Test-ItemExcluded {
     param($Details, [string]$Pattern)
@@ -74,14 +78,14 @@ function Test-ItemUntagged {
     return $significantTags.Count -eq 0
 }
 
-# ── Date helpers ──────────────────────────────────────────────────────────────
+# -- Date helpers --------------------------------------------------------------
 
 function ConvertFrom-UnixDate {
     param([long]$Timestamp)
     return ([System.DateTimeOffset]::FromUnixTimeSeconds($Timestamp)).DateTime
 }
 
-# ── Parallel item detail fetching ────────────────────────────────────────────
+# -- Parallel item detail fetching --------------------------------------------
 
 function Get-ItemDetails {
     param(
@@ -98,12 +102,16 @@ function Get-ItemDetails {
 
     $jobs = $Items | ForEach-Object {
         $itemId = $_.id
+        $itemVault = if ($_.vault -and $_.vault.id) { $_.vault.id } elseif ($_.vault -and $_.vault.name) { $_.vault.name } elseif ($_.vault) { [string]$_.vault } else { '' }
         $ps = [PowerShell]::Create()
         $ps.RunspacePool = $pool
         [void]$ps.AddScript({
-            param($id)
-            op item get --format json $id | ConvertFrom-Json
-        }).AddArgument($itemId)
+            param($id, $vault)
+            $opArgs = @('item', 'get', '--format', 'json')
+            if ($vault) { $opArgs += '--vault', $vault }
+            $opArgs += $id
+            op @opArgs | ConvertFrom-Json
+        }).AddArgument($itemId).AddArgument($itemVault)
         [PSCustomObject]@{ PS = $ps; Token = $ps.BeginInvoke(); Login = $_ }
     }
 
@@ -145,7 +153,8 @@ function Get-ItemDetails {
         Write-Verbose "Retrying $($failed.Count) failed fetches sequentially..."
         foreach ($login in $failed) {
             try {
-                $details = Get-ItemDetail -Id $login.id -MaxRetries $MaxRetries -RetryDelayMs $RetryDelayMs
+                $retryVault = if ($login.vault -and $login.vault.id) { $login.vault.id } elseif ($login.vault -and $login.vault.name) { $login.vault.name } elseif ($login.vault) { [string]$login.vault } else { '' }
+                $details = Get-ItemDetail -Id $login.id -Vault $retryVault -MaxRetries $MaxRetries -RetryDelayMs $RetryDelayMs
                 $results += [PSCustomObject]@{ Login = $login; Details = $details }
             } catch {
                 Write-Warning "Failed to fetch '$($login.title)' after retries: $_"
@@ -156,7 +165,7 @@ function Get-ItemDetails {
     return $results
 }
 
-# ── Business logic ────────────────────────────────────────────────────────────
+# -- Business logic ------------------------------------------------------------
 
 function Get-StaleItemInfo {
     param($Login, $Details, [int]$Days, [string]$ExcludePattern)
@@ -252,7 +261,52 @@ function Get-ItemExtendedInfo {
     }
 }
 
-# ── Password generation ───────────────────────────────────────────────────────
+function Protect-ConcealedFields {
+    param($Value)
+
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return @($Value | ForEach-Object { Protect-ConcealedFields -Value $_ })
+    }
+
+    if ($Value -is [pscustomobject] -or $Value -is [hashtable]) {
+        if ($Value.PSObject.Properties['type'] -and $Value.type -eq 'CONCEALED') {
+            if ($Value.PSObject.Properties['value']) {
+                $Value.value = '********'
+            }
+            $passwordDetails = $Value.PSObject.Properties['password_details']
+            if ($passwordDetails -and $passwordDetails.Value -and
+                $passwordDetails.Value.PSObject.Properties['history']) {
+                $history = $passwordDetails.Value.PSObject.Properties['history'].Value
+                $maskedHistory = if ($history -is [System.Collections.IEnumerable] -and $history -isnot [string]) {
+                    @($history | ForEach-Object { '********' })
+                } else {
+                    '********'
+                }
+                $passwordDetails.Value.history = $maskedHistory
+            }
+        }
+        foreach ($property in @($Value.PSObject.Properties)) {
+            if ($property.Name -ne 'value' -or $Value.type -ne 'CONCEALED') {
+                if (-not $property.IsSettable) { continue }
+                $property.Value = Protect-ConcealedFields -Value $property.Value
+            }
+        }
+    }
+
+    return $Value
+}
+
+function Test-FileContentChanged {
+    param([string]$Path, [string]$Content)
+
+    if (-not (Test-Path $Path)) { return $true }
+
+    $existing = [System.IO.File]::ReadAllText($Path)
+    return $existing.TrimEnd("`r", "`n") -cne $Content.TrimEnd("`r", "`n")
+}
+
+# -- Password generation -------------------------------------------------------
 
 $WORDLIST_URL = "https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt"
 $WORDLIST_CACHE = Join-Path $env:LOCALAPPDATA "1password-scripts\eff-wordlist.txt"
@@ -276,7 +330,7 @@ function Get-WordList {
     return @(Get-Content -Path $CachePath)
 }
 
-function New-MemorablePassword {
+function Get-MemorablePassword {
     param([string[]]$RecipeParts, [int]$Length)
 
     $wordList = Get-WordList
@@ -316,3 +370,4 @@ function New-MemorablePassword {
 
     return $password.ToString()
 }
+Set-Alias -Name New-MemorablePassword -Value Get-MemorablePassword

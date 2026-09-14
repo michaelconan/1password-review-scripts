@@ -15,10 +15,10 @@
     The tag to filter logins by.
 
     .EXAMPLE
-    PS> .\Get-Stale-Items.ps1 -Tag finance
+    PS> .\src\Get-Stale-Items.ps1 -Tag finance
 
     .EXAMPLE
-    PS> .\Get-Stale-Items.ps1 -Vault shared -Tag finance
+    PS> .\src\Get-Stale-Items.ps1 -Vault shared -Tag finance
 #>
 
 param(

@@ -20,10 +20,10 @@
     The ID or title of the 1Password item to update.
 
     .EXAMPLE
-    PS> .\New-Item-Password.ps1 -Item "MyLogin"
+    PS> .\src\New-Item-Password.ps1 -Item "MyLogin"
 
     .EXAMPLE
-    PS> .\New-Item-Password.ps1 -Item "MyLogin" -Vault Shared
+    PS> .\src\New-Item-Password.ps1 -Item "MyLogin" -Vault Shared
 #>
 
 param(
